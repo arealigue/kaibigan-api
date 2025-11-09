@@ -28,7 +28,7 @@ app = FastAPI(
 # --- ADD THIS BLOCK ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows ALL origins (for now, to fix dev instantly)
+    allow_origins=["https://kaibigan-web.vercel.app", "http://localhost:3000"],  # Allows ALL origins (for now, to fix dev instantly)
     allow_credentials=True,
     allow_methods=["*"],  # Allows all methods (GET, POST, etc.)
     allow_headers=["*"],  # Allows all headers
