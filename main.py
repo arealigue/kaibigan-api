@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel # New import
 from openai import OpenAI       # New import
 from dotenv import load_dotenv
+from fastapi.middleware.cors import CORSMiddleware 
 
 # Load keys from .env file
 load_dotenv()
@@ -18,6 +19,23 @@ app = FastAPI(
     description="The AI backend for KaibiganGPT.",
     version="0.1.0"
 )
+
+
+app = FastAPI(
+    # ... your existing title/description ...
+)
+
+# --- ADD THIS BLOCK ---
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows ALL origins (for now, to fix dev instantly)
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods (GET, POST, etc.)
+    allow_headers=["*"],  # Allows all headers
+)
+# ----------------------
+
+
 
 # --- "Single Source of Truth" for budgets ---
 BUDGET_MAP = {
