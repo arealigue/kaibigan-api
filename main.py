@@ -1,291 +1,154 @@
-import json
 import os
-from fastapi import FastAPI
-from pydantic import BaseModel # New import
-from openai import OpenAI       # New import
+import json
+import hmac
+import hashlib
+import base64
+from fastapi import FastAPI, Depends, HTTPException, status, Header, Request
+from pydantic import BaseModel
+from openai import OpenAI
 from dotenv import load_dotenv
+from typing import Annotated, List
+from supabase import create_client, Client
 from fastapi.middleware.cors import CORSMiddleware 
 
+# --- 1. SETUP ---
 # Load keys from .env file
 load_dotenv()
 
-# --- Initialize the OpenAI Client ---
-# Connection to the AI.
-# It automatically reads the OPENAI_API_KEY from the .env file.
+# Initialize OpenAI Client
 client = OpenAI() 
 
+# Initialize Secure Supabase Backend Client
+supabase_url = os.environ.get("SUPABASE_URL")
+supabase_key = os.environ.get("SUPABASE_SERVICE_KEY")
+if not supabase_url or not supabase_key:
+    raise Exception("Supabase URL and Service Key must be set in .env")
+supabase: Client = create_client(supabase_url, supabase_key)
+
+# Initialize FastAPI App
 app = FastAPI(
     title="Kaibigan API",
     description="The AI backend for KaibiganGPT.",
     version="0.1.0"
 )
 
-
-app = FastAPI(
-    # ... your existing title/description ...
-)
-
-# --- ADD THIS BLOCK ---
+# --- 2. MIDDLEWARE (CORS) ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://kaibigan-web.vercel.app", "http://localhost:3000"],  # Allows ALL origins (for now, to fix dev instantly)
+    allow_origins=[
+        "http://localhost:3000", 
+        "https://kaibigan-web.vercel.app"
+    ],
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods (GET, POST, etc.)
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
-# ----------------------
 
-
-
-# --- "Single Source of Truth" for budgets ---
+# --- 3. "SINGLE SOURCE OF TRUTH" DATA ---
 BUDGET_MAP = {
     "Low": "₱100-₱250 per day",
     "Medium": "₱251-₱500 per day",
     "High": "₱501+ per day"
 }
+try:
+    with open('gov_programs.json', 'r', encoding='utf-8') as f:
+        GOV_PROGRAMS_DB = json.load(f)
+except FileNotFoundError:
+    GOV_PROGRAMS_DB = []
+    print("WARNING: gov_programs.json not found.")
 
-# --- "Single Source of Truth" for Gov't Assistance ---
-GOV_PROGRAMS_DB = [
-    {
-        "id": "sss_sickness",
-        "agency": "SSS",
-        "name": "SSS Sickness Benefit",
-        "summary": "A daily cash allowance paid for the number of days a member is unable to work due to sickness or injury.",
-        "who_can_apply": "All SSS members (Employed, Self-Employed, OFW, Voluntary) who have paid at least 3 months of contributions within the 12-month period before the semester of sickness."
-    },
-    {
-        "id": "pagibig_housing",
-        "agency": "Pag-IBIG",
-        "name": "Pag-IBIG Housing Loan",
-        "summary": "Financing for the purchase of a residential lot, a house and lot, or for house construction or improvement.",
-        "who_can_apply": "Active Pag-IBIG members with at least 24 monthly contributions. OFWs can also apply."
-    },
-    {
-        "id": "dswd_aics",
-        "agency": "DSWD",
-        "name": "DSWD AICS Program",
-        "summary": "Assistance in Crisis Situations (AICS) provides medical, burial, educational, and food assistance to individuals or families in crisis.",
-        "who_can_apply": "Individuals/families who are poor, disadvantaged, or vulnerable and are facing a crisis, as assessed by a social worker."
-    },
-    {
-        "id": "owwa_education",
-        "agency": "OWWA",
-        "name": "OWWA Educational Assistance (EDSP)",
-        "summary": "An educational grant of ₱60,000 per year for a 4-5 year course for a qualified dependent of an active OFW member.",
-        "who_can_apply": "Qualified dependents of active OWWA members who have passed the qualifying exam and are enrolled in a CHED-accredited university."
-    }
-    # Add more to this database later
-]
+# --- 4. REQUEST MODELS (PYDANTIC) ---
+# Notice 'tier' is GONE from all models. We get it from the database.
 
-# --- Define the User's Input ---
-# This tells FastAPI: "When a user sends data to this endpoint,
-# it must be a JSON object with one field called 'prompt'."
 class ChatRequest(BaseModel):
     prompt: str
-    tier: str = "free"
 
-# --- Define the Meal Plan Input ---
 class MealPlanRequest(BaseModel):
-    # --- FREE & PRO ---
     family_size: int = 2
-    budget_range: str = "Medium" # "Low", "Medium", "High"
+    budget_range: str = "Medium"
     location: str = "Philippines"
+    days: int = 1
+    skill_level: str = "Home Cook"
+    restrictions: List[str] = []
+    allergies: List[str] = []
+    time_limit: int = 0
 
-    # --- PRO-ONLY ---
-    days: int = 1  # Override this in the endpoint
-    skill_level: str = "Home Cook" # "Beginner", "Home Cook"
-    restrictions: list[str] = [] # e.g., ["Keto", "Vegan"]
-    allergies: list[str] = [] # e.g., ["peanuts", "shellfish"]
-    time_limit: int = 0 # 0 = no limit, 30 = 30 minutes
-    
-    # --- Keep this for the freemium logic ---
-    tier: str = "free"
-
-# --- Define the Loan Calculator Input ---
 class LoanCalculatorRequest(BaseModel):
-    loan_amount: float  # e.g., 3000000
-    interest_rate: float # e.g., 6.25 (annual percentage)
-    loan_term_years: int # e.g., 30
+    loan_amount: float
+    interest_rate: float
+    loan_term_years: int
 
-
-# --- Define the Assistance Advisor Input (PRO FEATURE) ---
-class AssistanceAdvisorRequest(BaseModel):
-    # User's personal context
-    employment_status: str  # e.g., "Employed", "OFW", "Self-Employed", "Unemployed"
-    situation_description: str # e.g., "I lost my job," "My father is sick"
-    has_sss: bool = True
-    has_pagibig: bool = True
-    
-    # Default to "pro" since this is a pro-only endpoint
-    tier: str = "pro"
-
-# --- Define the Loan Advisor Input (PRO FEATURE) ---
 class LoanAdvisorRequest(BaseModel):
-    # From the calculator
     loan_amount: float
     monthly_payment: float
     total_interest: float
     loan_term_years: int
-    
-    # User's personal context
     monthly_income: float
+
+class AssistanceAdvisorRequest(BaseModel):
+    employment_status: str
+    situation_description: str
+    has_sss: bool = True
+    has_pagibig: bool = True
+
+# --- 5. THE "BOUNCER" (Security Dependency) ---
+# This function is now the "bouncer" for all secure endpoints.
+async def get_user_profile(authorization: Annotated[str | None, Header()] = None):
+    if not authorization:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authorization header missing")
     
-    # Default to "pro" since this is a pro-only endpoint
-    tier: str = "pro"
+    token_type, _, token = authorization.partition(' ')
+    if token_type.lower() != 'bearer' or not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token format")
+
+    try:
+        # 1. Validate the token and get the user ID
+        user_res = supabase.auth.get_user(token)
+        user = user_res.user
+        if not user:
+            raise Exception("Invalid token")
+        
+        # 2. Securely get the user's profile from our DB
+        profile_res = supabase.table('profiles').select('*').eq('id', user.id).single().execute()
+        profile = profile_res.data
+        if not profile:
+            raise Exception("Profile not found")
+        
+        # 3. Return the *trusted* profile
+        return profile
+    
+    except Exception as e:
+        print(f"Auth Error: {e}") # Log for debugging
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Authentication error")
 
 
-# --- Original "Alive" Endpoint ---
+# --- 6. PUBLIC/FREE ENDPOINTS ---
+# These endpoints do NOT have the bouncer.
+
 @app.get("/")
 def read_root():
-    """
-    Root endpoint. Just to check if the API is alive.
-    """
     return {"status": "Kaibigan API is alive and well!"}
 
-
-# --- NEW AI Chat Endpoint ---
-@app.post("/chat")
-async def chat_with_ai(request: ChatRequest):
-    """
-    A simple endpoint that takes a user's prompt
-    and returns a response from the AI.
-    
-    This endpoint is TIER-AWARE.
-    """
-    try:
-        # --- NEW BUSINESS LOGIC FOR TIERS ---
-        model_to_use = "gpt-5-nano"  # Default model
-
-        if request.tier == "pro":
-            model_to_use = "gpt-5-mini"  # Better model
-        # -------------------------------------------
-
-        # This is the call to the AI
-        chat_completion = client.chat.completions.create(
-            model=model_to_use,  # Use the dynamically selected model
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a helpful Filipino assistant."
-                },
-                {
-                    "role": "user",
-                    "content": request.prompt # This is the user's message
-                }
-            ]
-        )
-        
-        # Get the AI's reply
-        ai_response = chat_completion.choices[0].message.content
-        return {"response": ai_response}
-
-    except Exception as e:
-        # Return an error if something goes wrong
-        return {"error": str(e)}
-
-
-
-# --- Placeholder for Meal Plan Endpoint ---
-@app.post("/generate-meal-plan")
-async def generate_meal_plan(request: MealPlanRequest):
-    """
-    Generates a Filipino meal plan based on user inputs.
-    This endpoint is TIER-AWARE.
-    """
-
-    # --- 1. Set the AI Model ---
-    model_to_use = "gpt-5-nano"  # Default to free
-    day_count = 1                # Default to free
-
-    if request.tier == "pro":
-        model_to_use = "gpt-5-mini"
-        day_count = request.days  # Pro users get their requested days!
-
-    # --- 2. Craft the Prompts ---
-
-    # Map the budget range to its definition
-    # We default to Medium if something goes wrong.
-    budget_definition = BUDGET_MAP.get(request.budget_range, "₱251-₱500 per day")
-
-
-    system_prompt = f"""
-    You are 'Kaibigan Kusinero', an expert Filipino meal planner.
-    Your task is to create a {day_count}-day meal plan (Breakfast, Lunch, Dinner, Snacks).
-    
-    STRICT RULES:
-    1.  Cuisine: Filipino recipes by default.
-    2.  Audience: Plan is for {request.family_size} people.
-    3.  Budget: Adhere *strictly* to a '{budget_definition}'.
-    4.  Location: User is in '{request.location}'. Use local ingredients or substitutes.
-    """
-        
-    # --- 3. PRO-ONLY RULES ---
-    if request.tier == "pro":
-        system_prompt += "\n    --- PRO USER RULES ---"
-        
-        if request.restrictions:
-            system_prompt += f"\n    5. Dietary Restrictions: Must be {', '.join(request.restrictions)}."
-        
-        if request.allergies:
-            system_prompt += f"\n    6. Allergies: MUST NOT contain {', '.join(request.allergies)}."
-        
-        system_prompt += f"\n    7. Skill Level: Recipes must be for a '{request.skill_level}' cook."
-        
-        if request.time_limit > 0:
-            system_prompt += f"\n    8. Time Limit: All recipes must be doable in {request.time_limit} minutes or less."
-
-    system_prompt += "\n\n    Respond ONLY with the meal plan in a clean, simple format. Start with 'Here is your {day_count}-day meal plan:' and include a shopping list."
-
-    user_prompt = f"Please generate the {day_count}-day meal plan for me."
-
-    # --- 4. Call the AI ---
-    try:
-        chat_completion = client.chat.completions.create(
-            model=model_to_use,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ]
-        )
-        
-        ai_response = chat_completion.choices[0].message.content
-        return {"meal_plan": ai_response, "prompt_debug": system_prompt} # Prompt for debugging
-
-    except Exception as e:
-        return {"error": str(e)}
-
-
-# --- (Math-Based) Loan Calculator Endpoint ---
 @app.post("/calculate-loan")
 def calculate_loan(request: LoanCalculatorRequest):
-    """
-    Calculates the monthly loan payment using a standard
-    formula. This is a FREE endpoint (no AI cost).
-    """
     try:
-        # 1. Get the inputs
         principal = request.loan_amount
         annual_rate = request.interest_rate / 100.0
         loan_term_months = request.loan_term_years * 12
 
-        # 2. Handle edge case
+        if loan_term_months == 0:
+            return {"monthly_payment": principal, "total_payment": principal, "total_interest": 0, **request.model_dump()}
+
         if annual_rate == 0:
-            if loan_term_months == 0:
-                return {"monthly_payment": principal} # Pay all at once
             monthly_payment = principal / loan_term_months
         else:
-            # 3. This is the magic formula
             monthly_rate = annual_rate / 12.0
             r_plus_1_to_n = (1 + monthly_rate) ** loan_term_months
-            
-            monthly_payment = principal * (
-                (monthly_rate * r_plus_1_to_n) / (r_plus_1_to_n - 1)
-            )
-
+            monthly_payment = principal * ((monthly_rate * r_plus_1_to_n) / (r_plus_1_to_n - 1))
+        
         total_payment = monthly_payment * loan_term_months
         total_interest = total_payment - principal
 
-        # 4. Return the clean JSON response
         return {
             "monthly_payment": round(monthly_payment, 2),
             "total_payment": round(total_payment, 2),
@@ -294,43 +157,128 @@ def calculate_loan(request: LoanCalculatorRequest):
             "interest_rate": request.interest_rate,
             "loan_term_years": request.loan_term_years
         }
+    except Exception as e:
+        return {"error": str(e)}
 
+@app.get("/search-assistance")
+def search_assistance(keyword: str = ""):
+    if not keyword:
+        return {"programs": GOV_PROGRAMS_DB}
+    search_term = keyword.lower()
+    results = [p for p in GOV_PROGRAMS_DB if 
+               search_term in p["name"].lower() or 
+               search_term in p["agency"].lower() or 
+               search_term in p["summary"].lower()]
+    return {"programs": results}
+
+
+# --- 7. SECURE ENDPOINTS (Requires Auth) ---
+# All endpoints below have `Depends(get_user_profile)`
+
+@app.post("/chat")
+async def chat_with_ai(
+    request: ChatRequest, 
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    tier = profile['tier'] # Get the REAL tier from the DB
+    model_to_use = "gpt-5-mini" if tier == "pro" else "gpt-5-nano"
+
+    try:
+        chat_completion = client.chat.completions.create(
+            model=model_to_use,
+            messages=[
+                {"role": "system", "content": "You are a helpful Filipino assistant."},
+                {"role": "user", "content": request.prompt}
+            ]
+        )
+        ai_response = chat_completion.choices[0].message.content
+        return {"response": ai_response}
     except Exception as e:
         return {"error": str(e)}
 
 
-# --- AI Loan Advisor Endpoint (PRO FEATURE) ---
+@app.post("/generate-meal-plan")
+async def generate_meal_plan(
+    request: MealPlanRequest, 
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    tier = profile['tier'] # Get the REAL tier
+    model_to_use = "gpt-5-nano"
+    day_count = 1
+
+    # Force free user limits, ignoring their request data
+    if tier == 'pro':
+        model_to_use = "gpt-5-mini"
+        day_count = request.days # Pro user gets their requested days
+    else:
+        # A free user is NOT allowed to use these features
+        request.restrictions = []
+        request.allergies = []
+        request.skill_level = "Home Cook"
+        request.time_limit = 0
+        day_count = 1
+
+    budget_definition = BUDGET_MAP.get(request.budget_range, "₱251-₱500 per day")
+    
+    system_prompt = f"""
+    You are 'Kaibigan Kusinero', an expert Filipino meal planner.
+    Your task is to create a {day_count}-day meal plan (Breakfast, Lunch, Dinner, Snacks).
+    STRICT RULES:
+    1. Cuisine: Filipino recipes by default.
+    2. Audience: Plan is for {request.family_size} people.
+    3. Budget: Adhere *strictly* to a '{budget_definition}'.
+    4. Location: User is in '{request.location}'. Use local ingredients or substitutes.
+    """
+    
+    if tier == "pro":
+        system_prompt += "\n    --- PRO USER RULES ---"
+        if request.restrictions:
+            system_prompt += f"\n    5. Dietary Restrictions: Must be {', '.join(request.restrictions)}."
+        if request.allergies:
+            system_prompt += f"\n    6. Allergies: MUST NOT contain {', '.join(request.allergies)}."
+        system_prompt += f"\n    7. Skill Level: Recipes must be for a '{request.skill_level}' cook."
+        if request.time_limit > 0:
+            system_prompt += f"\n    8. Time Limit: All recipes must be doable in {request.time_limit} minutes or less."
+
+    system_prompt += "\n\n    Respond ONLY with the meal plan in a clean, simple format."
+    user_prompt = f"Please generate the {day_count}-day meal plan for me."
+
+    try:
+        chat_completion = client.chat.completions.create(
+            model=model_to_use,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ]
+        )
+        ai_response = chat_completion.choices[0].message.content
+        return {"meal_plan": ai_response}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.post("/analyze-loan")
-async def analyze_loan(request: LoanAdvisorRequest):
-    """
-    Analyzes a loan's affordability and provides advice.
-    This is a PRO-TIER AI endpoint.
-    """
-
-    # --- 1. Set AI Model ---
-    # Pro feature, so use the better model.
-    model_to_use = "gpt-5-mini" 
-
-    if request.tier != "pro":
-        # A quick "guard clause"
-        return {"error": "This feature is for Pro members only."}
-
-    # --- 2. Calculate Key Financial Ratios ---
-    # Do simple math *before* calling the AI to save tokens
-    # and give the AI better data.
+async def analyze_loan(
+    request: LoanAdvisorRequest, 
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    tier = profile['tier']
+    if tier != 'pro':
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This feature is for Pro members only.")
     
-    # Debt-to-Income Ratio (DTI) for this loan only
-    dti_ratio = (request.monthly_payment / request.monthly_income) * 100
+    model_to_use = "gpt-5-mini"
+
+    try:
+        dti_ratio = (request.monthly_payment / request.monthly_income) * 100
+    except ZeroDivisionError:
+        dti_ratio = 0 # Handle divide by zero if income is 0
     
-    # --- 3. Build the "Secret Sauce" Prompt ---
     system_prompt = f"""
     You are 'Kaibigan Pera', an expert Filipino financial advisor.
     You are friendly, empathetic, but give clear, practical advice.
     Your task is to analyze a loan for a user.
-    
     USER'S FINANCIALS:
     - Monthly Income: ₱{request.monthly_income:,.2f}
-    
     LOAN DETAILS:
     - Loan Amount: ₱{request.loan_amount:,.2f}
     - Monthly Payment: ₱{request.monthly_payment:,.2f}
@@ -338,21 +286,20 @@ async def analyze_loan(request: LoanAdvisorRequest):
     - Total Interest Paid: ₱{request.total_interest:,.2f}
 
     YOUR ANALYSIS (MUST INCLUDE):
-    1.  **Affordability:** The user's Debt-to-Income (DTI) ratio for this loan is {dti_ratio:.2f}%.
-        - If DTI < 10%: Call it 'Very Affordable'.
-        - If 10% <= DTI < 20%: Call it 'Affordable'.
-        - If 20% <= DTI < 30%: Call it 'Manageable, but tight'.
-        - If DTI >= 30%: Call it 'High Risk / Not Recommended'.
-    2.  **The "So What?"**: Briefly explain *what this means* for their budget.
-    3.  **Interest Analysis**: Comment on the ₱{request.total_interest:,.2f} in total interest. Is it a lot compared to the principal?
-    4.  **Actionable Advice**: Give 2-3 bullet points of "Next Steps" or "Things to Consider" (e.g., "Check Pag-IBIG housing loans," "Try to add 10% to your down payment," "Make sure you have an emergency fund.").
+    1. **Affordability:** The user's Debt-to-Income (DTI) ratio for this loan is {dti_ratio:.2f}%.
+       - If DTI < 10%: Call it 'Very Affordable'.
+       - If 10% <= DTI < 20%: Call it 'Affordable'.
+       - If 20% <= DTI < 30%: Call it 'Manageable, but tight'.
+       - If DTI >= 30%: Call it 'High Risk / Not Recommended'.
+    2. **The "So What?"**: Briefly explain *what this means* for their budget.
+    3. **Interest Analysis**: Comment on the ₱{request.total_interest:,.2f} in total interest.
+    4. **Actionable Advice**: Give 2-3 bullet points of "Next Steps".
     
     Respond in a clear, friendly, and helpful tone. Start with a greeting.
     """
     
     user_prompt = "Here is my loan and my income. Can you please analyze it for me?"
 
-    # --- 4. Call the AI ---
     try:
         chat_completion = client.chat.completions.create(
             model=model_to_use,
@@ -361,94 +308,48 @@ async def analyze_loan(request: LoanAdvisorRequest):
                 {"role": "user", "content": user_prompt}
             ]
         )
-        
         ai_response = chat_completion.choices[0].message.content
         return {"analysis": ai_response, "prompt_debug": system_prompt}
-
     except Exception as e:
         return {"error": str(e)}
-    
 
 
-# --- 11. Gov't Assistance Search Endpoint (FREE) ---
-@app.get("/search-assistance")
-def search_assistance(keyword: str = ""):
-    """
-    Searches the "Tulong" database for government programs.
-    This is a FREE endpoint (no AI cost).
-    
-    If no keyword is given, it returns all programs.
-    """
-    
-    # If no keyword, return the whole database
-    if not keyword:
-        return {"programs": GOV_PROGRAMS_DB}
-    
-    # If there is a keyword, search for it (case-insensitive)
-    search_term = keyword.lower()
-    results = []
-    
-    for program in GOV_PROGRAMS_DB:
-        if (search_term in program["name"].lower() or
-            search_term in program["agency"].lower() or
-            search_term in program["summary"].lower()):
-            
-            results.append(program)
-            
-    return {"programs": results}
-
-
-
-# --- 13. AI Assistance Advisor Endpoint (PRO FEATURE) ---
 @app.post("/analyze-assistance")
-async def analyze_assistance(request: AssistanceAdvisorRequest):
-    """
-    Analyzes a user's situation against the known
-    database of government programs.
-    This is a PRO-TIER AI endpoint.
-    """
+async def analyze_assistance(
+    request: AssistanceAdvisorRequest, 
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    tier = profile['tier']
+    if tier != 'pro':
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This feature is for Pro members only.")
 
-    # --- 1. Set AI Model ---
-    model_to_use = "gpt-5-mini" # Pro feature = better model
-
-    if request.tier != "pro":
-        return {"error": "This feature is for Pro members only."}
-
-    # --- 2. Prepare the "Context" ---
-    # Convert Python database into a JSON string
-    # so the AI can read it as clean "context".
+    model_to_use = "gpt-5-mini"
     programs_context = json.dumps(GOV_PROGRAMS_DB, indent=2)
 
-    # --- 3. Build the "Secret Sauce" Prompt ---
     system_prompt = f"""
-    You are 'Kaibigan Tulong', an expert advisor on
-    Philippine government assistance programs.
-    
-    You have access to the following database of programs:
-    --- DATABASE START ---
+    You are 'Kaibigan Tulong', an expert advisor on Philippine government programs.
+    You have access to the following database:
     {programs_context}
-    --- DATABASE END ---
-
-    A user needs help. Here is their situation:
-    - Employment Status: {request.employment_status}
+    
+    A user needs help. Their situation:
+    - Employment: {request.employment_status}
     - Has SSS: {request.has_sss}
     - Has Pag-IBIG: {request.has_pagibig}
     - Their Situation: "{request.situation_description}"
 
     YOUR TASK:
-    1.  Analyze the user's situation.
-    2.  Cross-reference it *ONLY* with the programs in the database provided.
-    3.  Create a "Personalized Assistance Report" for the user.
-    4.  For each program in the database, state EITHER:
-        - "You are likely eligible for..." (and explain *why*).
-        - "You are likely *not* eligible for..." (and explain *why not*).
-        - "You *might* be eligible for..." (and explain *what to check*).
-    5.  Be empathetic, clear, and direct. Start with a greeting.
+    1. Analyze their situation.
+    2. Cross-reference it *ONLY* with the programs in the database.
+    3. Create a "Personalized Assistance Report".
+    4. For each program, state EITHER:
+       - "You are likely eligible for..." (and *why*).
+       - "You are likely *not* eligible for..." (and *why not*).
+       - "You *might* be eligible for..." (and *what to check*).
+    5. Be empathetic, clear, and direct. Start with a greeting.
     """
     
     user_prompt = "Based on my situation, what help can I get?"
 
-    # --- 4. Call the AI ---
     try:
         chat_completion = client.chat.completions.create(
             model=model_to_use,
@@ -457,16 +358,58 @@ async def analyze_assistance(request: AssistanceAdvisorRequest):
                 {"role": "user", "content": user_prompt}
             ]
         )
-        
         ai_response = chat_completion.choices[0].message.content
         return {"analysis": ai_response, "prompt_debug": system_prompt}
-
     except Exception as e:
         return {"error": str(e)}
-    
 
-# This is the line that runs your app
-# (Keep it commented out, you run this in the terminal)
-# @app.post("/generate-meal-plan")
-# async def generate_meal_plan():
-#    pass
+# --- 8. WEBHOOK ENDPOINT (THE "CASH REGISTER") ---
+@app.post("/webhook-lemonsqueezy")
+async def webhook_lemonsqueezy(request: Request):
+    """
+    Listens for events from Lemon Squeezy and updates the user's tier.
+    This is secured by a signing secret, not a user token.
+    """
+    try:
+        secret = os.environ.get("LEMONSQUEEZY_SIGNING_SECRET")
+        if not secret:
+            print("WEBHOOK ERROR: LEMONSQUEEZY_SIGNING_SECRET is not set.")
+            raise HTTPException(status_code=500, detail="Webhook not configured")
+            
+        signature = request.headers.get("X-Signature", "")
+        payload = await request.body()
+        
+        digest = hmac.new(secret.encode(), payload, hashlib.sha256).digest()
+        computed_signature = base64.b64encode(digest).decode()
+
+        if not hmac.compare_digest(computed_signature, signature):
+            print("WEBHOOK ERROR: Invalid signature")
+            raise HTTPException(status_code=400, detail="Invalid signature")
+
+        data = json.loads(payload.decode())
+        event_name = data.get("meta", {}).get("event_name")
+        user_email = data.get("data", {}).get("attributes", {}).get("user_email")
+        
+        if not user_email:
+            print(f"WEBHOOK: No user email in event '{event_name}'")
+            return {"status": "ok", "message": "No email, but webhook received."}
+
+        status = data.get("data", {}).get("attributes", {}).get("status")
+        new_tier = "free" # Default
+        
+        if event_name in ["subscription_created", "subscription_updated"] and status == "active":
+            new_tier = "pro"
+        
+        print(f"WEBHOOK: Attempting to set {user_email} to '{new_tier}'...")
+        update_res = supabase.table("profiles").update({"tier": new_tier}).eq("email", user_email).execute()
+        
+        if not update_res.data:
+            print(f"WEBHOOK ERROR: No profile found for {user_email}")
+            return {"status": "error", "message": "Profile not found"}
+
+        print(f"WEBHOOK SUCCESS: User {user_email} is now '{new_tier}'")
+        return {"status": "success"}
+
+    except Exception as e:
+        print(f"WEBHOOK EXCEPTION: {e}")
+        return {"error": str(e)}

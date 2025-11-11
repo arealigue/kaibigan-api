@@ -1,0 +1,30 @@
+[
+  {
+    "id": "sss_sickness",
+    "agency": "SSS",
+    "name": "SSS Sickness Benefit",
+    "summary": "A daily cash allowance paid for the number of days a member is unable to work due to sickness or injury.",
+    "who_can_apply": "All SSS members (Employed, Self-Employed, OFW, Voluntary) who have paid at least 3 months of contributions within the 12-month period before the semester of sickness."
+  },
+  {
+    "id": "pagibig_housing",
+    "agency": "Pag-IBIG",
+    "name": "Pag-IBIG Housing Loan",
+    "summary": "Financing for the purchase of a residential lot, a house and lot, or for house construction or improvement.",
+    "who_can_apply": "Active Pag-IBIG members with at least 24 monthly contributions. OFWs can also apply."
+  },
+  {
+    "id": "dswd_aics",
+    "agency": "DSWD",
+    "name": "DSWD AICS Program",
+    "summary": "Assistance in Crisis Situations (AICS) provides medical, burial, educational, and food assistance to individuals or families in crisis.",
+    "who_can_apply": "Individuals/families who are poor, disadvantaged, or vulnerable and are facing a crisis, as assessed by a social worker."
+  },
+  {
+    "id": "owwa_education",
+    "agency": "OWWA",
+    "name": "OWWA Educational Assistance (EDSP)",
+    "summary": "An educational grant of ₱60,000 per year for a 4-5 year course for a qualified dependent of an active OFW member.",
+    "who_can_apply": "Qualified dependents of active OWWA members who have passed the qualifying exam and are enrolled in a CHED-accredited university."
+  }
+]
