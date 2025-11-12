@@ -33,7 +33,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000", 
-        "https://kaibigan-web.vercel.app"
+        "https://kaibigan-web.vercel.app" # <-- Make sure this matches your Vercel URL
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -54,6 +54,7 @@ except FileNotFoundError:
     print("WARNING: gov_programs.json not found.")
 
 # --- 4. REQUEST MODELS (PYDANTIC) ---
+# ... (All your existing models: ChatRequest, MealPlanRequest, etc. No changes.)
 class ChatRequest(BaseModel):
     prompt: str
 
@@ -99,7 +100,6 @@ class TransactionCreate(BaseModel):
     amount: float
     notes: Optional[str] = None
 
-# --- NEW: UTANG TRACKER MODELS ---
 class UtangCreate(BaseModel):
     debtor_name: str
     amount: float
@@ -113,13 +113,10 @@ class AICollectorRequest(BaseModel):
     debtor_name: str
     amount: float
     tone: str # "Gentle", "Firm", "Final"
-# ---------------------------------
 
 
 # --- 5. THE "BOUNCER" (Security Dependency) ---
 async def get_user_profile(authorization: Annotated[str | None, Header()] = None):
-    # ... (existing bouncer code, no changes) ...
-# ... (existing get_user_profile function) ...
     if not authorization:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authorization header missing")
     
@@ -148,12 +145,10 @@ async def get_user_profile(authorization: Annotated[str | None, Header()] = None
 # --- 6. PUBLIC/FREE ENDPOINTS ---
 @app.get("/")
 def read_root():
-# ... (existing root endpoint) ...
     return {"status": "Kaibigan API is alive and well!"}
 
 @app.post("/calculate-loan")
 def calculate_loan(request: LoanCalculatorRequest):
-# ... (existing loan calculator endpoint) ...
     try:
         principal = request.loan_amount
         annual_rate = request.interest_rate / 100.0
@@ -185,7 +180,6 @@ def calculate_loan(request: LoanCalculatorRequest):
 
 @app.get("/search-assistance")
 def search_assistance(keyword: str = ""):
-# ... (existing assistance search endpoint) ...
     if not keyword:
         return {"programs": GOV_PROGRAMS_DB}
     search_term = keyword.lower()
@@ -197,9 +191,9 @@ def search_assistance(keyword: str = ""):
 
 
 # --- 7. SECURE ENDPOINTS (Requires Auth) ---
+# ... (All your existing secure endpoints: /chat, /generate-meal-plan, /analyze-loan, etc. No changes.)
 @app.post("/chat")
 async def chat_with_ai(
-# ... (existing chat endpoint) ...
     request: ChatRequest, 
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
@@ -221,7 +215,6 @@ async def chat_with_ai(
 
 @app.post("/generate-meal-plan")
 async def generate_meal_plan(
-# ... (existing meal plan endpoint) ...
     request: MealPlanRequest, 
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
@@ -273,13 +266,21 @@ async def generate_meal_plan(
             ]
         )
         ai_response = chat_completion.choices[0].message.content
-        return {"meal_plan": ai_response}
+        
+        # We'll pass back the structured data for the share card
+        return {
+            "meal_plan": ai_response, 
+            "share_data": {
+                "budget": budget_definition,
+                "family": request.family_size,
+                "location": request.location
+            }
+        }
     except Exception as e:
         return {"error": str(e)}
 
 @app.post("/analyze-loan")
 async def analyze_loan(
-# ... (existing loan analysis endpoint) ...
     request: LoanAdvisorRequest, 
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
@@ -336,7 +337,6 @@ async def analyze_loan(
 
 @app.post("/analyze-assistance")
 async def analyze_assistance(
-# ... (existing assistance analysis endpoint) ...
     request: AssistanceAdvisorRequest, 
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
@@ -386,7 +386,6 @@ async def analyze_assistance(
 
 @app.post("/recipes/create-from-notes")
 async def create_recipe_from_notes(
-# ... (existing recipe AI endpoint) ...
     request: RecipeNotesRequest,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
@@ -449,7 +448,6 @@ async def create_recipe_from_notes(
 
 @app.post("/ipon/goals")
 async def create_ipon_goal(
-# ... (existing ipon goal endpoint) ...
     request: IponGoalCreate,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
@@ -474,7 +472,6 @@ async def create_ipon_goal(
 
 @app.get("/ipon/goals")
 async def get_ipon_goals(
-# ... (existing get ipon goals endpoint) ...
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
     tier = profile['tier']
@@ -491,7 +488,6 @@ async def get_ipon_goals(
 
 @app.post("/ipon/transactions")
 async def add_ipon_transaction(
-# ... (existing add ipon transaction endpoint) ...
     request: TransactionCreate,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
@@ -520,14 +516,13 @@ async def add_ipon_transaction(
 
 @app.get("/ipon/goals/{goal_id}/transactions")
 async def get_goal_transactions(
-# ... (existing get transactions endpoint) ...
     goal_id: str,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
     tier = profile['tier']
     user_id = profile['id']
     if tier != 'pro':
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ipon Tracker is a Pro feature.")
+        raise HTTPException(status_code=status.HTTP_4F03_FORBIDDEN, detail="Ipon Tracker is a Pro feature.")
 
     try:
         tx_res = supabase.table('transactions').select('*').eq('user_id', user_id).eq('goal_id', goal_id).order('created_at', desc=True).execute()
@@ -536,17 +531,11 @@ async def get_goal_transactions(
         print(f"Get Transactions Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
-# --- 8. NEW "UTANG TRACKER" ENDPOINTS (PRO) ---
-
 @app.post("/utang/debts")
 async def create_utang_record(
     request: UtangCreate,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
-    """
-    (PRO FEATURE) Creates a new utang (debt owed to user) record.
-    """
     tier = profile['tier']
     user_id = profile['id']
     if tier != 'pro':
@@ -570,9 +559,6 @@ async def create_utang_record(
 async def get_utang_records(
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
-    """
-    (PRO FEATURE) Gets all 'unpaid' utang records for the user.
-    """
     tier = profile['tier']
     user_id = profile['id']
     if tier != 'pro':
@@ -591,9 +577,6 @@ async def update_utang_status(
     request: UtangUpdate,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
-    """
-    (PRO FEATURE) Marks an utang as 'paid' or 'unpaid'.
-    """
     tier = profile['tier']
     user_id = profile['id']
     if tier != 'pro':
@@ -615,14 +598,10 @@ async def generate_utang_message(
     request: AICollectorRequest,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
-    """
-    (PRO FEATURE) Uses AI to generate a "paningil" message.
-    """
     tier = profile['tier']
     if tier != 'pro':
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="AI Collector is a Pro feature.")
 
-    # Define the tone of the message
     tone_instructions = {
         "Gentle": "a very gentle, friendly, and 'nahihiya' reminder. Start with 'Hi [Name], kumusta?'.",
         "Firm": "a polite but firm and direct reminder that the payment is due.",
@@ -642,7 +621,7 @@ async def generate_utang_message(
     
     try:
         chat_completion = client.chat.completions.create(
-            model="gpt-5-mini", # Use pro model
+            model="gpt-5-mini",
             messages=[
                 {"role": "system", "content": system_prompt}
             ]
@@ -656,7 +635,10 @@ async def generate_utang_message(
 # --- 9. WEBHOOK ENDPOINT (THE "CASH REGISTER") ---
 @app.post("/webhook-lemonsqueezy")
 async def webhook_lemonsqueezy(request: Request):
-# ... (existing webhook endpoint) ...
+    """
+    Listens for events from Lemon Squeezy and updates the user's tier.
+    This is secured by a signing secret, not a user token.
+    """
     try:
         secret = os.environ.get("LEMONSQUEEZY_SIGNING_SECRET")
         if not secret:
@@ -685,8 +667,28 @@ async def webhook_lemonsqueezy(request: Request):
         status_val = data.get("data", {}).get("attributes", {}).get("status")
         new_tier = "free"
         
-        if event_name in ["subscription_created", "subscription_updated"] and status_val == "active":
+        # --- NEW LOGIC FOR PROMO COUNTER ---
+        if event_name == "subscription_created" and status_val == "active":
             new_tier = "pro"
+            
+            # Now, decrement the promo spots
+            try:
+                # 1. Get current spots
+                promo_res = supabase.table('launch_promo').select('spots_remaining').eq('id', 1).single().execute()
+                if promo_res.data and promo_res.data['spots_remaining'] > 0:
+                    # 2. Decrement
+                    new_spots = promo_res.data['spots_remaining'] - 1
+                    supabase.table('launch_promo').update({'spots_remaining': new_spots}).eq('id', 1).execute()
+                    print(f"WEBHOOK: Promo spot taken. {new_spots} remaining.")
+                else:
+                    print("WEBHOOK: Promo is over or spots are 0.")
+            except Exception as e:
+                print(f"WEBHOOK: Failed to decrement promo spots. Error: {e}")
+                # We don't stop the webhook for this, just log it.
+        
+        elif event_name == "subscription_updated" and status_val == "active":
+            new_tier = "pro"
+        # --- END OF NEW LOGIC ---
         
         print(f"WEBHOOK: Attempting to set {user_email} to '{new_tier}'...")
         update_res = supabase.table("profiles").update({"tier": new_tier}).eq("email", user_email).execute()
