@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from typing import Annotated, List, Optional
 from supabase import create_client, Client
 from fastapi.middleware.cors import CORSMiddleware 
+import datetime # <--- NEW IMPORT
 
 # --- 1. SETUP ---
 # Load keys from .env file
@@ -100,6 +101,19 @@ class AssistanceAdvisorRequest(BaseModel):
 class RecipeNotesRequest(BaseModel):
     recipe_name: str
     notes: str
+
+# --- NEW: IPON TRACKER MODELS ---
+class IponGoalCreate(BaseModel):
+    name: str
+    target_amount: float
+    target_date: Optional[datetime.date] = None
+
+class TransactionCreate(BaseModel):
+    goal_id: str # This is a UUID, but we take it as a string
+    amount: float # Positive for deposit, negative for withdrawal
+    notes: Optional[str] = None
+# ---------------------------------
+
 
 # --- 5. THE "BOUNCER" (Security Dependency) ---
 # This function is now the "bouncer" for all secure endpoints.
@@ -447,7 +461,112 @@ async def create_recipe_from_notes(
         raise HTTPException(status_code=500, detail=f"AI formatting error: {e}")
 
 
-# --- 8. WEBHOOK ENDPOINT (THE "CASH REGISTER") ---
+# --- 8. NEW "IPON TRACKER" ENDPOINTS (PRO) ---
+
+@app.post("/ipon/goals")
+async def create_ipon_goal(
+    request: IponGoalCreate,
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """
+    (PRO FEATURE) Creates a new savings goal for the user.
+    """
+    tier = profile['tier']
+    user_id = profile['id']
+    if tier != 'pro':
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ipon Tracker is a Pro feature.")
+
+    try:
+        goal_data = request.model_dump()
+        goal_data['user_id'] = user_id
+        
+        insert_res = supabase.table('ipon_goals').insert(goal_data).execute()
+        
+        if not insert_res.data:
+            raise HTTPException(status_code=500, detail="Failed to create goal.")
+            
+        return insert_res.data[0]
+    except Exception as e:
+        print(f"Ipon Goal Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/ipon/goals")
+async def get_ipon_goals(
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """
+    (PRO FEATURE) Gets all savings goals for the user.
+    """
+    tier = profile['tier']
+    user_id = profile['id']
+    if tier != 'pro':
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ipon Tracker is a Pro feature.")
+
+    try:
+        goals_res = supabase.table('ipon_goals').select('*').eq('user_id', user_id).order('created_at', desc=True).execute()
+        return goals_res.data
+    except Exception as e:
+        print(f"Get Goals Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/ipon/transactions")
+async def add_ipon_transaction(
+    request: TransactionCreate,
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """
+    (PRO FEATURE) Adds a transaction (deposit/withdrawal) to a goal.
+    The SQL trigger will automatically update the goal's total.
+    """
+    tier = profile['tier']
+    user_id = profile['id']
+    if tier != 'pro':
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ipon Tracker is a Pro feature.")
+    
+    try:
+        # First, verify this goal actually belongs to this user
+        goal_res = supabase.table('ipon_goals').select('id').eq('id', request.goal_id).eq('user_id', user_id).single().execute()
+        if not goal_res.data:
+            raise HTTPException(status_code=404, detail="Goal not found or you do not have permission.")
+
+        # If it's theirs, add the transaction
+        tx_data = request.model_dump()
+        tx_data['user_id'] = user_id
+        
+        insert_res = supabase.table('transactions').insert(tx_data).execute()
+        
+        if not insert_res.data:
+            raise HTTPException(status_code=500, detail="Failed to add transaction.")
+        
+        return insert_res.data[0]
+    except Exception as e:
+        print(f"Transaction Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/ipon/goals/{goal_id}/transactions")
+async def get_goal_transactions(
+    goal_id: str,
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """
+    (PRO FEATURE) Gets all transactions for a specific goal.
+    """
+    tier = profile['tier']
+    user_id = profile['id']
+    if tier != 'pro':
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ipon Tracker is a Pro feature.")
+
+    try:
+        # Verify goal belongs to user, and fetch transactions
+        tx_res = supabase.table('transactions').select('*').eq('user_id', user_id).eq('goal_id', goal_id).order('created_at', desc=True).execute()
+        return tx_res.data
+    except Exception as e:
+        print(f"Get Transactions Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- 9. WEBHOOK ENDPOINT (THE "CASH REGISTER") ---
 @app.post("/webhook-lemonsqueezy")
 async def webhook_lemonsqueezy(request: Request):
     """
