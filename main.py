@@ -91,6 +91,10 @@ class AssistanceAdvisorRequest(BaseModel):
     has_sss: bool = True
     has_pagibig: bool = True
 
+class RecipeNotesRequest(BaseModel):
+    recipe_name: str  # e.g., "Nanay's Adobo"
+    notes: str        # The user's messy, free-text notes
+
 # --- 5. THE "BOUNCER" (Security Dependency) ---
 # This function is now the "bouncer" for all secure endpoints.
 async def get_user_profile(authorization: Annotated[str | None, Header()] = None):
@@ -362,6 +366,82 @@ async def analyze_assistance(
         return {"analysis": ai_response, "prompt_debug": system_prompt}
     except Exception as e:
         return {"error": str(e)}
+    
+@app.post("/recipes/create-from-notes")
+async def create_recipe_from_notes(
+    request: RecipeNotesRequest,
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """
+    (PRO FEATURE)
+    Takes a user's "messy" recipe notes, uses AI to clean and
+    structure them, and saves them to the 'recipes' table.
+    """
+    tier = profile['tier']
+    user_id = profile['id']
+
+    # 1. THE BOUNCER
+    if tier != 'pro':
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="The 'Luto ni Nanay' Recipe Bank is a Pro feature. Please upgrade to save your recipes."
+        )
+
+    # 2. THE "AI CHEF" PROMPT
+    # This prompt forces the AI to act as a data-formatting tool.
+    # We are asking it to return *only* a JSON object.
+    system_prompt = f"""
+    You are an expert Filipino recipe formatter. A user is providing their
+    messy, informal notes for a recipe. Your ONLY job is to convert
+    this into a clean, structured JSON object.
+
+    The JSON object MUST have these exact fields:
+    - "ingredients": An array of strings.
+    - "instructions": A single string. You can use newline characters (\\n) for steps.
+    - "servings": An integer.
+    - "prep_time_minutes": An integer.
+
+    USER'S NOTES for "{request.recipe_name}":
+    ---
+    {request.notes}
+    ---
+
+    Now, return ONLY the valid JSON object. Do not add any conversational text.
+    """
+
+    try:
+        # 3. CALL THE AI
+        print(f"Calling GPT-5-Mini for user {user_id}...")
+        chat_completion = client.chat.completions.create(
+            model="gpt-5-mini",
+            response_format={ "type": "json_object" }, # Force JSON output
+            messages=[
+                {"role": "system", "content": system_prompt}
+            ]
+        )
+        
+        ai_response_json = chat_completion.choices[0].message.content
+        
+        # 4. PREPARE DATA FOR DATABASE
+        # The AI gives us the JSON, we add our own data to it.
+        recipe_data = json.loads(ai_response_json)
+        recipe_data['user_id'] = user_id
+        recipe_data['name'] = request.recipe_name
+        recipe_data['original_notes'] = request.notes
+
+        # 5. SAVE TO SUPABASE
+        print(f"Saving recipe '{request.recipe_name}' to Supabase...")
+        insert_res = supabase.table('recipes').insert(recipe_data).execute()
+
+        if not insert_res.data:
+            raise HTTPException(status_code=500, detail="Failed to save recipe to database.")
+
+        return insert_res.data[0] # Return the newly created recipe
+
+    except Exception as e:
+        print(f"AI Chef Error: {e}")
+        raise HTTPException(status_code=500, detail=f"AI formatting error: {e}")
+
 
 # --- 8. WEBHOOK ENDPOINT (THE "CASH REGISTER") ---
 @app.post("/webhook-lemonsqueezy")
@@ -413,3 +493,4 @@ async def webhook_lemonsqueezy(request: Request):
     except Exception as e:
         print(f"WEBHOOK EXCEPTION: {e}")
         return {"error": str(e)}
+    
