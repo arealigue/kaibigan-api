@@ -7,7 +7,7 @@ from fastapi import FastAPI, Depends, HTTPException, status, Header, Request
 from pydantic import BaseModel
 from openai import OpenAI
 from dotenv import load_dotenv
-from typing import Annotated, List
+from typing import Annotated, List, Optional
 from supabase import create_client, Client
 from fastapi.middleware.cors import CORSMiddleware 
 
@@ -22,7 +22,13 @@ client = OpenAI()
 supabase_url = os.environ.get("SUPABASE_URL")
 supabase_key = os.environ.get("SUPABASE_SERVICE_KEY")
 if not supabase_url or not supabase_key:
-    raise Exception("Supabase URL and Service Key must be set in .env")
+    # On Render, these might be set directly in the environment, so we don't always raise here 
+    # if load_dotenv didn't find a file, but we do need them to proceed.
+    print("Warning: Supabase keys not found in .env, checking system environment variables...")
+
+if not supabase_url or not supabase_key:
+     raise Exception("Supabase URL and Service Key must be set in environment variables.")
+
 supabase: Client = create_client(supabase_url, supabase_key)
 
 # Initialize FastAPI App
@@ -92,8 +98,8 @@ class AssistanceAdvisorRequest(BaseModel):
     has_pagibig: bool = True
 
 class RecipeNotesRequest(BaseModel):
-    recipe_name: str  # e.g., "Nanay's Adobo"
-    notes: str        # The user's messy, free-text notes
+    recipe_name: str
+    notes: str
 
 # --- 5. THE "BOUNCER" (Security Dependency) ---
 # This function is now the "bouncer" for all secure endpoints.
@@ -366,7 +372,7 @@ async def analyze_assistance(
         return {"analysis": ai_response, "prompt_debug": system_prompt}
     except Exception as e:
         return {"error": str(e)}
-    
+
 @app.post("/recipes/create-from-notes")
 async def create_recipe_from_notes(
     request: RecipeNotesRequest,
@@ -388,8 +394,6 @@ async def create_recipe_from_notes(
         )
 
     # 2. THE "AI CHEF" PROMPT
-    # This prompt forces the AI to act as a data-formatting tool.
-    # We are asking it to return *only* a JSON object.
     system_prompt = f"""
     You are an expert Filipino recipe formatter. A user is providing their
     messy, informal notes for a recipe. Your ONLY job is to convert
@@ -423,7 +427,6 @@ async def create_recipe_from_notes(
         ai_response_json = chat_completion.choices[0].message.content
         
         # 4. PREPARE DATA FOR DATABASE
-        # The AI gives us the JSON, we add our own data to it.
         recipe_data = json.loads(ai_response_json)
         recipe_data['user_id'] = user_id
         recipe_data['name'] = request.recipe_name
@@ -433,8 +436,9 @@ async def create_recipe_from_notes(
         print(f"Saving recipe '{request.recipe_name}' to Supabase...")
         insert_res = supabase.table('recipes').insert(recipe_data).execute()
 
+        # In Supabase-py v2+, insert returns an object with .data
         if not insert_res.data:
-            raise HTTPException(status_code=500, detail="Failed to save recipe to database.")
+             raise HTTPException(status_code=500, detail="Failed to save recipe to database.")
 
         return insert_res.data[0] # Return the newly created recipe
 
@@ -468,16 +472,20 @@ async def webhook_lemonsqueezy(request: Request):
 
         data = json.loads(payload.decode())
         event_name = data.get("meta", {}).get("event_name")
+        
+        # Lemon Squeezy stores custom data or email in attributes
+        # We check user_email directly
         user_email = data.get("data", {}).get("attributes", {}).get("user_email")
         
         if not user_email:
             print(f"WEBHOOK: No user email in event '{event_name}'")
             return {"status": "ok", "message": "No email, but webhook received."}
 
-        status = data.get("data", {}).get("attributes", {}).get("status")
+        status_val = data.get("data", {}).get("attributes", {}).get("status")
         new_tier = "free" # Default
         
-        if event_name in ["subscription_created", "subscription_updated"] and status == "active":
+        # Simple logic: if subscription is active, they are Pro
+        if event_name in ["subscription_created", "subscription_updated"] and status_val == "active":
             new_tier = "pro"
         
         print(f"WEBHOOK: Attempting to set {user_email} to '{new_tier}'...")
@@ -485,6 +493,7 @@ async def webhook_lemonsqueezy(request: Request):
         
         if not update_res.data:
             print(f"WEBHOOK ERROR: No profile found for {user_email}")
+            # We don't error out the webhook response to LS, just log it
             return {"status": "error", "message": "Profile not found"}
 
         print(f"WEBHOOK SUCCESS: User {user_email} is now '{new_tier}'")
@@ -493,4 +502,3 @@ async def webhook_lemonsqueezy(request: Request):
     except Exception as e:
         print(f"WEBHOOK EXCEPTION: {e}")
         return {"error": str(e)}
-    
