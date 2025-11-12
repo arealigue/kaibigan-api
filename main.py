@@ -10,29 +10,18 @@ from dotenv import load_dotenv
 from typing import Annotated, List, Optional
 from supabase import create_client, Client
 from fastapi.middleware.cors import CORSMiddleware 
-import datetime # <--- NEW IMPORT
+import datetime
 
 # --- 1. SETUP ---
-# Load keys from .env file
 load_dotenv()
-
-# Initialize OpenAI Client
 client = OpenAI() 
 
-# Initialize Secure Supabase Backend Client
 supabase_url = os.environ.get("SUPABASE_URL")
 supabase_key = os.environ.get("SUPABASE_SERVICE_KEY")
 if not supabase_url or not supabase_key:
-    # On Render, these might be set directly in the environment, so we don't always raise here 
-    # if load_dotenv didn't find a file, but we do need them to proceed.
-    print("Warning: Supabase keys not found in .env, checking system environment variables...")
-
-if not supabase_url or not supabase_key:
      raise Exception("Supabase URL and Service Key must be set in environment variables.")
-
 supabase: Client = create_client(supabase_url, supabase_key)
 
-# Initialize FastAPI App
 app = FastAPI(
     title="Kaibigan API",
     description="The AI backend for KaibiganGPT.",
@@ -65,8 +54,6 @@ except FileNotFoundError:
     print("WARNING: gov_programs.json not found.")
 
 # --- 4. REQUEST MODELS (PYDANTIC) ---
-# Notice 'tier' is GONE from all models. We get it from the database.
-
 class ChatRequest(BaseModel):
     prompt: str
 
@@ -102,22 +89,37 @@ class RecipeNotesRequest(BaseModel):
     recipe_name: str
     notes: str
 
-# --- NEW: IPON TRACKER MODELS ---
 class IponGoalCreate(BaseModel):
     name: str
     target_amount: float
     target_date: Optional[datetime.date] = None
 
 class TransactionCreate(BaseModel):
-    goal_id: str # This is a UUID, but we take it as a string
-    amount: float # Positive for deposit, negative for withdrawal
+    goal_id: str
+    amount: float
     notes: Optional[str] = None
+
+# --- NEW: UTANG TRACKER MODELS ---
+class UtangCreate(BaseModel):
+    debtor_name: str
+    amount: float
+    due_date: Optional[datetime.date] = None
+    notes: Optional[str] = None
+
+class UtangUpdate(BaseModel):
+    status: str # "paid" or "unpaid"
+
+class AICollectorRequest(BaseModel):
+    debtor_name: str
+    amount: float
+    tone: str # "Gentle", "Firm", "Final"
 # ---------------------------------
 
 
 # --- 5. THE "BOUNCER" (Security Dependency) ---
-# This function is now the "bouncer" for all secure endpoints.
 async def get_user_profile(authorization: Annotated[str | None, Header()] = None):
+    # ... (existing bouncer code, no changes) ...
+# ... (existing get_user_profile function) ...
     if not authorization:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authorization header missing")
     
@@ -126,35 +128,32 @@ async def get_user_profile(authorization: Annotated[str | None, Header()] = None
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token format")
 
     try:
-        # 1. Validate the token and get the user ID
         user_res = supabase.auth.get_user(token)
         user = user_res.user
         if not user:
             raise Exception("Invalid token")
         
-        # 2. Securely get the user's profile from our DB
         profile_res = supabase.table('profiles').select('*').eq('id', user.id).single().execute()
         profile = profile_res.data
         if not profile:
             raise Exception("Profile not found")
         
-        # 3. Return the *trusted* profile
         return profile
     
     except Exception as e:
-        print(f"Auth Error: {e}") # Log for debugging
+        print(f"Auth Error: {e}") 
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Authentication error")
 
 
 # --- 6. PUBLIC/FREE ENDPOINTS ---
-# These endpoints do NOT have the bouncer.
-
 @app.get("/")
 def read_root():
+# ... (existing root endpoint) ...
     return {"status": "Kaibigan API is alive and well!"}
 
 @app.post("/calculate-loan")
 def calculate_loan(request: LoanCalculatorRequest):
+# ... (existing loan calculator endpoint) ...
     try:
         principal = request.loan_amount
         annual_rate = request.interest_rate / 100.0
@@ -186,6 +185,7 @@ def calculate_loan(request: LoanCalculatorRequest):
 
 @app.get("/search-assistance")
 def search_assistance(keyword: str = ""):
+# ... (existing assistance search endpoint) ...
     if not keyword:
         return {"programs": GOV_PROGRAMS_DB}
     search_term = keyword.lower()
@@ -197,14 +197,13 @@ def search_assistance(keyword: str = ""):
 
 
 # --- 7. SECURE ENDPOINTS (Requires Auth) ---
-# All endpoints below have `Depends(get_user_profile)`
-
 @app.post("/chat")
 async def chat_with_ai(
+# ... (existing chat endpoint) ...
     request: ChatRequest, 
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
-    tier = profile['tier'] # Get the REAL tier from the DB
+    tier = profile['tier'] 
     model_to_use = "gpt-5-mini" if tier == "pro" else "gpt-5-nano"
 
     try:
@@ -220,22 +219,20 @@ async def chat_with_ai(
     except Exception as e:
         return {"error": str(e)}
 
-
 @app.post("/generate-meal-plan")
 async def generate_meal_plan(
+# ... (existing meal plan endpoint) ...
     request: MealPlanRequest, 
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
-    tier = profile['tier'] # Get the REAL tier
+    tier = profile['tier'] 
     model_to_use = "gpt-5-nano"
     day_count = 1
 
-    # Force free user limits, ignoring their request data
     if tier == 'pro':
         model_to_use = "gpt-5-mini"
-        day_count = request.days # Pro user gets their requested days
+        day_count = request.days
     else:
-        # A free user is NOT allowed to use these features
         request.restrictions = []
         request.allergies = []
         request.skill_level = "Home Cook"
@@ -280,9 +277,9 @@ async def generate_meal_plan(
     except Exception as e:
         return {"error": str(e)}
 
-
 @app.post("/analyze-loan")
 async def analyze_loan(
+# ... (existing loan analysis endpoint) ...
     request: LoanAdvisorRequest, 
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
@@ -295,7 +292,7 @@ async def analyze_loan(
     try:
         dti_ratio = (request.monthly_payment / request.monthly_income) * 100
     except ZeroDivisionError:
-        dti_ratio = 0 # Handle divide by zero if income is 0
+        dti_ratio = 0
     
     system_prompt = f"""
     You are 'Kaibigan Pera', an expert Filipino financial advisor.
@@ -337,9 +334,9 @@ async def analyze_loan(
     except Exception as e:
         return {"error": str(e)}
 
-
 @app.post("/analyze-assistance")
 async def analyze_assistance(
+# ... (existing assistance analysis endpoint) ...
     request: AssistanceAdvisorRequest, 
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
@@ -389,25 +386,19 @@ async def analyze_assistance(
 
 @app.post("/recipes/create-from-notes")
 async def create_recipe_from_notes(
+# ... (existing recipe AI endpoint) ...
     request: RecipeNotesRequest,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
-    """
-    (PRO FEATURE)
-    Takes a user's "messy" recipe notes, uses AI to clean and
-    structure them, and saves them to the 'recipes' table.
-    """
     tier = profile['tier']
     user_id = profile['id']
 
-    # 1. THE BOUNCER
     if tier != 'pro':
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, 
             detail="The 'Luto ni Nanay' Recipe Bank is a Pro feature. Please upgrade to save your recipes."
         )
 
-    # 2. THE "AI CHEF" PROMPT
     system_prompt = f"""
     You are an expert Filipino recipe formatter. A user is providing their
     messy, informal notes for a recipe. Your ONLY job is to convert
@@ -428,11 +419,10 @@ async def create_recipe_from_notes(
     """
 
     try:
-        # 3. CALL THE AI
         print(f"Calling GPT-5-Mini for user {user_id}...")
         chat_completion = client.chat.completions.create(
             model="gpt-5-mini",
-            response_format={ "type": "json_object" }, # Force JSON output
+            response_format={ "type": "json_object" },
             messages=[
                 {"role": "system", "content": system_prompt}
             ]
@@ -440,37 +430,29 @@ async def create_recipe_from_notes(
         
         ai_response_json = chat_completion.choices[0].message.content
         
-        # 4. PREPARE DATA FOR DATABASE
         recipe_data = json.loads(ai_response_json)
         recipe_data['user_id'] = user_id
         recipe_data['name'] = request.recipe_name
         recipe_data['original_notes'] = request.notes
 
-        # 5. SAVE TO SUPABASE
         print(f"Saving recipe '{request.recipe_name}' to Supabase...")
         insert_res = supabase.table('recipes').insert(recipe_data).execute()
 
-        # In Supabase-py v2+, insert returns an object with .data
         if not insert_res.data:
              raise HTTPException(status_code=500, detail="Failed to save recipe to database.")
 
-        return insert_res.data[0] # Return the newly created recipe
+        return insert_res.data[0] 
 
     except Exception as e:
         print(f"AI Chef Error: {e}")
         raise HTTPException(status_code=500, detail=f"AI formatting error: {e}")
 
-
-# --- 8. NEW "IPON TRACKER" ENDPOINTS (PRO) ---
-
 @app.post("/ipon/goals")
 async def create_ipon_goal(
+# ... (existing ipon goal endpoint) ...
     request: IponGoalCreate,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
-    """
-    (PRO FEATURE) Creates a new savings goal for the user.
-    """
     tier = profile['tier']
     user_id = profile['id']
     if tier != 'pro':
@@ -492,11 +474,9 @@ async def create_ipon_goal(
 
 @app.get("/ipon/goals")
 async def get_ipon_goals(
+# ... (existing get ipon goals endpoint) ...
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
-    """
-    (PRO FEATURE) Gets all savings goals for the user.
-    """
     tier = profile['tier']
     user_id = profile['id']
     if tier != 'pro':
@@ -511,25 +491,20 @@ async def get_ipon_goals(
 
 @app.post("/ipon/transactions")
 async def add_ipon_transaction(
+# ... (existing add ipon transaction endpoint) ...
     request: TransactionCreate,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
-    """
-    (PRO FEATURE) Adds a transaction (deposit/withdrawal) to a goal.
-    The SQL trigger will automatically update the goal's total.
-    """
     tier = profile['tier']
     user_id = profile['id']
     if tier != 'pro':
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ipon Tracker is a Pro feature.")
     
     try:
-        # First, verify this goal actually belongs to this user
         goal_res = supabase.table('ipon_goals').select('id').eq('id', request.goal_id).eq('user_id', user_id).single().execute()
         if not goal_res.data:
             raise HTTPException(status_code=404, detail="Goal not found or you do not have permission.")
 
-        # If it's theirs, add the transaction
         tx_data = request.model_dump()
         tx_data['user_id'] = user_id
         
@@ -543,22 +518,18 @@ async def add_ipon_transaction(
         print(f"Transaction Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.get("/ipon/goals/{goal_id}/transactions")
 async def get_goal_transactions(
+# ... (existing get transactions endpoint) ...
     goal_id: str,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
-    """
-    (PRO FEATURE) Gets all transactions for a specific goal.
-    """
     tier = profile['tier']
     user_id = profile['id']
     if tier != 'pro':
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ipon Tracker is a Pro feature.")
 
     try:
-        # Verify goal belongs to user, and fetch transactions
         tx_res = supabase.table('transactions').select('*').eq('user_id', user_id).eq('goal_id', goal_id).order('created_at', desc=True).execute()
         return tx_res.data
     except Exception as e:
@@ -566,13 +537,126 @@ async def get_goal_transactions(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# --- 8. NEW "UTANG TRACKER" ENDPOINTS (PRO) ---
+
+@app.post("/utang/debts")
+async def create_utang_record(
+    request: UtangCreate,
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """
+    (PRO FEATURE) Creates a new utang (debt owed to user) record.
+    """
+    tier = profile['tier']
+    user_id = profile['id']
+    if tier != 'pro':
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Utang Tracker is a Pro feature.")
+
+    try:
+        utang_data = request.model_dump()
+        utang_data['user_id'] = user_id
+        
+        insert_res = supabase.table('utang').insert(utang_data).execute()
+        
+        if not insert_res.data:
+            raise HTTPException(status_code=500, detail="Failed to create utang record.")
+            
+        return insert_res.data[0]
+    except Exception as e:
+        print(f"Utang Create Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/utang/debts")
+async def get_utang_records(
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """
+    (PRO FEATURE) Gets all 'unpaid' utang records for the user.
+    """
+    tier = profile['tier']
+    user_id = profile['id']
+    if tier != 'pro':
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Utang Tracker is a Pro feature.")
+
+    try:
+        utang_res = supabase.table('utang').select('*').eq('user_id', user_id).eq('status', 'unpaid').order('due_date', desc=False).execute()
+        return utang_res.data
+    except Exception as e:
+        print(f"Get Utang Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/utang/debts/{debt_id}")
+async def update_utang_status(
+    debt_id: str,
+    request: UtangUpdate,
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """
+    (PRO FEATURE) Marks an utang as 'paid' or 'unpaid'.
+    """
+    tier = profile['tier']
+    user_id = profile['id']
+    if tier != 'pro':
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Utang Tracker is a Pro feature.")
+
+    try:
+        update_res = supabase.table('utang').update({"status": request.status}).eq('id', debt_id).eq('user_id', user_id).execute()
+        
+        if not update_res.data:
+            raise HTTPException(status_code=404, detail="Utang record not found or permission denied.")
+            
+        return update_res.data[0]
+    except Exception as e:
+        print(f"Utang Update Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/utang/generate-message")
+async def generate_utang_message(
+    request: AICollectorRequest,
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """
+    (PRO FEATURE) Uses AI to generate a "paningil" message.
+    """
+    tier = profile['tier']
+    if tier != 'pro':
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="AI Collector is a Pro feature.")
+
+    # Define the tone of the message
+    tone_instructions = {
+        "Gentle": "a very gentle, friendly, and 'nahihiya' reminder. Start with 'Hi [Name], kumusta?'.",
+        "Firm": "a polite but firm and direct reminder that the payment is due.",
+        "Final": "a final, urgent, and very serious reminder that the payment is long overdue."
+    }
+    
+    system_prompt = f"""
+    You are 'Kaibigan Pera', an AI assistant who helps Filipinos with the awkward task of collecting debt ('maningil').
+    Your task is to draft a short, clear, and culturally-appropriate SMS or Messenger message.
+    
+    TONE: The message must have a {request.tone} tone. Be {tone_instructions.get(request.tone, "a polite tone")}.
+    DEBTOR'S NAME: {request.debtor_name}
+    AMOUNT: ₱{request.amount:,.2f}
+    
+    Respond *only* with the message itself. Do not add any extra text or explanation.
+    """
+    
+    try:
+        chat_completion = client.chat.completions.create(
+            model="gpt-5-mini", # Use pro model
+            messages=[
+                {"role": "system", "content": system_prompt}
+            ]
+        )
+        ai_response = chat_completion.choices[0].message.content
+        return {"message": ai_response}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 # --- 9. WEBHOOK ENDPOINT (THE "CASH REGISTER") ---
 @app.post("/webhook-lemonsqueezy")
 async def webhook_lemonsqueezy(request: Request):
-    """
-    Listens for events from Lemon Squeezy and updates the user's tier.
-    This is secured by a signing secret, not a user token.
-    """
+# ... (existing webhook endpoint) ...
     try:
         secret = os.environ.get("LEMONSQUEEZY_SIGNING_SECRET")
         if not secret:
@@ -592,8 +676,6 @@ async def webhook_lemonsqueezy(request: Request):
         data = json.loads(payload.decode())
         event_name = data.get("meta", {}).get("event_name")
         
-        # Lemon Squeezy stores custom data or email in attributes
-        # We check user_email directly
         user_email = data.get("data", {}).get("attributes", {}).get("user_email")
         
         if not user_email:
@@ -601,9 +683,8 @@ async def webhook_lemonsqueezy(request: Request):
             return {"status": "ok", "message": "No email, but webhook received."}
 
         status_val = data.get("data", {}).get("attributes", {}).get("status")
-        new_tier = "free" # Default
+        new_tier = "free"
         
-        # Simple logic: if subscription is active, they are Pro
         if event_name in ["subscription_created", "subscription_updated"] and status_val == "active":
             new_tier = "pro"
         
@@ -612,7 +693,6 @@ async def webhook_lemonsqueezy(request: Request):
         
         if not update_res.data:
             print(f"WEBHOOK ERROR: No profile found for {user_email}")
-            # We don't error out the webhook response to LS, just log it
             return {"status": "error", "message": "Profile not found"}
 
         print(f"WEBHOOK SUCCESS: User {user_email} is now '{new_tier}'")
