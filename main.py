@@ -67,6 +67,8 @@ class MealPlanRequest(BaseModel):
     restrictions: List[str] = []
     allergies: List[str] = []
     time_limit: int = 0
+    include_grocery_list: bool = True  # Toggle for grocery list
+    include_nutrition: bool = False     # Toggle for nutritional info (PRO feature)
 
 class LoanCalculatorRequest(BaseModel):
     loan_amount: float
@@ -226,57 +228,107 @@ async def generate_meal_plan(
         model_to_use = "gpt-5-mini"
         day_count = request.days
     else:
+        # Free tier limitations
         request.restrictions = []
         request.allergies = []
         request.skill_level = "Home Cook"
         request.time_limit = 0
+        request.include_nutrition = False  # Nutrition is PRO only
         day_count = 1
 
     budget_definition = BUDGET_MAP.get(request.budget_range, "₱251-₱500 per day")
     
+    # Build the JSON schema for consistent output
+    json_structure = {
+        "days": [
+            {
+                "day_number": 1,
+                "meals": {
+                    "breakfast": {"name": "Recipe name", "estimated_cost": 100},
+                    "lunch": {"name": "Recipe name", "estimated_cost": 150},
+                    "dinner": {"name": "Recipe name", "estimated_cost": 150},
+                    "snacks": {"name": "Snack name", "estimated_cost": 50}
+                },
+                "daily_total": 450
+            }
+        ],
+        "total_cost_estimate": 450
+    }
+    
+    # Add optional fields based on toggles
+    if request.include_grocery_list:
+        json_structure["grocery_list"] = [
+            {"item": "ingredient name", "quantity": "amount", "estimated_price": 50}
+        ]
+    
+    if request.include_nutrition and tier == "pro":
+        json_structure["days"][0]["nutrition_summary"] = {
+            "calories": 2000,
+            "protein_g": 80,
+            "carbs_g": 250,
+            "fat_g": 65
+        }
+    
     system_prompt = f"""
     You are 'Kaibigan Kusinero', an expert Filipino meal planner.
-    Your task is to create a {day_count}-day meal plan (Breakfast, Lunch, Dinner, Snacks).
+    Your task is to create a {day_count}-day meal plan in JSON format.
+    
     STRICT RULES:
     1. Cuisine: Filipino recipes by default.
     2. Audience: Plan is for {request.family_size} people.
     3. Budget: Adhere *strictly* to a '{budget_definition}'.
     4. Location: User is in '{request.location}'. Use local ingredients or substitutes.
+    5. ALWAYS include estimated_cost for EVERY meal in Philippine Pesos (₱).
+    6. Calculate daily_total and total_cost_estimate accurately.
     """
     
     if tier == "pro":
         system_prompt += "\n    --- PRO USER RULES ---"
         if request.restrictions:
-            system_prompt += f"\n    5. Dietary Restrictions: Must be {', '.join(request.restrictions)}."
+            system_prompt += f"\n    7. Dietary Restrictions: Must be {', '.join(request.restrictions)}."
         if request.allergies:
-            system_prompt += f"\n    6. Allergies: MUST NOT contain {', '.join(request.allergies)}."
-        system_prompt += f"\n    7. Skill Level: Recipes must be for a '{request.skill_level}' cook."
+            system_prompt += f"\n    8. Allergies: MUST NOT contain {', '.join(request.allergies)}."
+        system_prompt += f"\n    9. Skill Level: Recipes must be for a '{request.skill_level}' cook."
         if request.time_limit > 0:
-            system_prompt += f"\n    8. Time Limit: All recipes must be doable in {request.time_limit} minutes or less."
+            system_prompt += f"\n    10. Time Limit: All recipes must be doable in {request.time_limit} minutes or less."
+    
+    system_prompt += f"""
 
-    system_prompt += "\n\n    Respond ONLY with the meal plan in a clean, simple format."
-    user_prompt = f"Please generate the {day_count}-day meal plan for me."
+    OUTPUT FORMAT (JSON):
+    {json.dumps(json_structure, indent=2)}
+    
+    IMPORTANT:
+    - Create {day_count} day(s) of meal plans
+    - Each meal MUST have an estimated_cost
+    - grocery_list is {"REQUIRED" if request.include_grocery_list else "NOT required"}
+    - nutrition_summary is {"REQUIRED (Pro feature)" if request.include_nutrition and tier == "pro" else "NOT required"}
+    - Return ONLY valid JSON, no additional text
+    """
 
     try:
         chat_completion = client.chat.completions.create(
             model=model_to_use,
+            response_format={"type": "json_object"},  # Force JSON output
             messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
+                {"role": "system", "content": system_prompt}
             ]
         )
-        ai_response = chat_completion.choices[0].message.content
+        ai_response_json = chat_completion.choices[0].message.content
+        meal_plan_data = json.loads(ai_response_json)
         
-        # We'll pass back the structured data for the share card
+        # Return structured response with share data
         return {
-            "meal_plan": ai_response, 
+            "meal_plan": meal_plan_data,
             "share_data": {
                 "budget": budget_definition,
                 "family": request.family_size,
-                "location": request.location
+                "location": request.location,
+                "days": day_count,
+                "total_cost": meal_plan_data.get("total_cost_estimate", 0)
             }
         }
     except Exception as e:
+        print(f"Meal Plan Error: {e}")
         return {"error": str(e)}
 
 @app.post("/analyze-loan")
