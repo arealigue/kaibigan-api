@@ -328,9 +328,9 @@ async def create_kaban_transaction(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Kaibigan Kaban is a Pro feature.")
 
     try:
-        # Verify category exists and user has access to it
-        category_res = supabase.table('expense_categories').select('id').or_(f'user_id.is.null,user_id.eq.{user_id}').eq('id', request.category_id).single().execute()
-        if not category_res.data:
+        # Verify category exists and user has access to it (default or user's custom)
+        category_res = supabase.table('expense_categories').select('id').or_(f'user_id.is.null,user_id.eq.{user_id}').eq('id', request.category_id).execute()
+        if not category_res.data or len(category_res.data) == 0:
             raise HTTPException(status_code=404, detail="Category not found or access denied.")
 
         tx_data = request.model_dump()
@@ -346,6 +346,8 @@ async def create_kaban_transaction(
             raise HTTPException(status_code=500, detail="Failed to create transaction.")
             
         return insert_res.data[0]
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions as-is
     except Exception as e:
         print(f"Create Transaction Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
