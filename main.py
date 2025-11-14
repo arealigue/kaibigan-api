@@ -41,10 +41,11 @@ app.add_middleware(
 )
 
 # --- 3. "SINGLE SOURCE OF TRUTH" DATA ---
-BUDGET_MAP = {
-    "Low": "₱100-₱250 per day",
-    "Medium": "₱251-₱500 per day",
-    "High": "₱501+ per day"
+# Budget ranges per head (internal calculations)
+BUDGET_PER_HEAD = {
+    "Ultra Budget": {"min": 40, "max": 80, "meals": 3},  # No snacks
+    "Budget-Friendly": {"min": 81, "max": 150, "meals": 4},  # Includes snacks
+    "Comfortable": {"min": 151, "max": 300, "meals": 4}  # Includes snacks
 }
 
 # Static cooking tips for ALL users (always included)
@@ -53,6 +54,41 @@ STATIC_COOKING_TIPS = [
     "Buy rice and cooking oil in bulk to reduce costs.",
     "Use leftover rice for breakfast to minimize waste."
 ]
+
+def get_budget_definition(budget_range: str, family_size: int):
+    """
+    Calculate total daily budget based on per-head rates and family size.
+    Auto-upgrades Ultra Budget to Budget-Friendly for families of 7+.
+    """
+    # Auto-upgrade logic for large families
+    original_budget = budget_range
+    if family_size >= 7 and budget_range == "Ultra Budget":
+        budget_range = "Budget-Friendly"
+    
+    per_head = BUDGET_PER_HEAD[budget_range]
+    total_min = per_head["min"] * family_size
+    total_max = per_head["max"] * family_size
+    
+    # Format with comma for thousands
+    if total_max >= 1000:
+        total_range = f"₱{total_min:,}-₱{total_max:,} per day"
+    else:
+        total_range = f"₱{total_min}-₱{total_max} per day"
+    
+    per_head_range = f"₱{per_head['min']}-₱{per_head['max']} per person"
+    
+    return {
+        "budget_range": budget_range,  # May be upgraded
+        "original_budget": original_budget,
+        "total_range": total_range,
+        "per_head_range": per_head_range,
+        "total_min": total_min,
+        "total_max": total_max,
+        "per_head_min": per_head["min"],
+        "per_head_max": per_head["max"],
+        "includes_snacks": per_head["meals"] == 4,
+        "was_upgraded": budget_range != original_budget
+    }
 
 try:
     with open('gov_programs.json', 'r', encoding='utf-8') as f:
@@ -244,23 +280,31 @@ async def generate_meal_plan(
         request.include_nutrition = False  # Nutrition is PRO only
         day_count = 1
 
-    budget_definition = BUDGET_MAP.get(request.budget_range, "₱251-₱500 per day")
+    # Get budget definition with auto-upgrade logic
+    budget_info = get_budget_definition(request.budget_range, request.family_size)
+    budget_definition = budget_info["total_range"]
+    includes_snacks = budget_info["includes_snacks"]
     
     # Build the JSON schema for consistent output
+    meals_structure = {
+        "breakfast": {"name": "Recipe name", "estimated_cost": 100},
+        "lunch": {"name": "Recipe name", "estimated_cost": 150},
+        "dinner": {"name": "Recipe name", "estimated_cost": 150}
+    }
+    
+    # Add snacks only for Budget-Friendly and Comfortable
+    if includes_snacks:
+        meals_structure["snacks"] = {"name": "Snack name", "estimated_cost": 50}
+    
     json_structure = {
         "days": [
             {
                 "day_number": 1,
-                "meals": {
-                    "breakfast": {"name": "Recipe name", "estimated_cost": 100},
-                    "lunch": {"name": "Recipe name", "estimated_cost": 150},
-                    "dinner": {"name": "Recipe name", "estimated_cost": 150},
-                    "snacks": {"name": "Snack name", "estimated_cost": 50}
-                },
-                "daily_total": 450
+                "meals": meals_structure,
+                "daily_total": 450 if includes_snacks else 400
             }
         ],
-        "total_cost_estimate": 450
+        "total_cost_estimate": 450 if includes_snacks else 400
     }
     
     # Add optional fields based on toggles
@@ -306,6 +350,9 @@ async def generate_meal_plan(
                     }
                 })
     
+    # Determine meal structure based on budget
+    meal_structure = "breakfast, lunch, and dinner ONLY (NO snacks)" if not includes_snacks else "breakfast, lunch, dinner, and snacks"
+    
     system_prompt = f"""
     You are 'Kaibigan Kusinero', an expert Filipino meal planner.
     Your task is to create a {day_count}-day meal plan in JSON format.
@@ -313,10 +360,29 @@ async def generate_meal_plan(
     STRICT RULES:
     1. Cuisine: Filipino recipes by default.
     2. Audience: Plan is for {request.family_size} people.
-    3. Budget: Adhere *strictly* to a '{budget_definition}'.
+    3. Budget: Adhere *strictly* to a '{budget_definition}' (₱{budget_info['per_head_min']}-₱{budget_info['per_head_max']} per person).
     4. Location: User is in '{request.location}'. Use local ingredients or substitutes.
-    5. ALWAYS include estimated_cost for EVERY meal in Philippine Pesos (₱).
-    6. Calculate daily_total and total_cost_estimate accurately.
+    5. Meals: Include {meal_structure}.
+    6. ALWAYS include estimated_cost for EVERY meal in Philippine Pesos (₱).
+    7. Calculate daily_total and total_cost_estimate accurately.
+    """
+    
+    # Add budget tier context
+    if budget_info["budget_range"] == "Ultra Budget":
+        system_prompt += """
+    
+    ⚠️ ULTRA BUDGET MODE:
+    - Focus on affordable Filipino staples: rice, eggs, dried fish, monggo, vegetables
+    - Maximize filling meals with minimal cost
+    - Use budget-stretching techniques (one ulam shared, rice as filler)
+    - NO SNACKS - 3 main meals only
+    """
+    
+    if budget_info["was_upgraded"]:
+        system_prompt += f"""
+    
+    📢 NOTE: Budget was auto-upgraded from {budget_info['original_budget']} to {budget_info['budget_range']} 
+    for a family of {request.family_size} to ensure adequate nutrition.
     """
     
     if tier == "pro":
@@ -401,16 +467,31 @@ async def generate_meal_plan(
         meal_plan_data["cooking_tips"] = cooking_tips
         
         # Return structured response with share data
-        return {
+        response_data = {
             "meal_plan": meal_plan_data,
             "share_data": {
                 "budget": budget_definition,
+                "budget_per_head": budget_info["per_head_range"],
+                "total_daily_budget": budget_definition,
+                "budget_tier": budget_info["budget_range"],
                 "family": request.family_size,
                 "location": request.location,
                 "days": day_count,
-                "total_cost": meal_plan_data.get("total_cost_estimate", 0)
+                "total_cost": meal_plan_data.get("total_cost_estimate", 0),
+                "includes_snacks": includes_snacks
             }
         }
+        
+        # Add upgrade notice if budget was auto-upgraded
+        if budget_info["was_upgraded"]:
+            response_data["notice"] = {
+                "type": "budget_upgraded",
+                "message": f"Budget automatically upgraded from {budget_info['original_budget']} to {budget_info['budget_range']} for family of {request.family_size} to ensure adequate nutrition.",
+                "original_budget": budget_info["original_budget"],
+                "new_budget": budget_info["budget_range"]
+            }
+        
+        return response_data
     except Exception as e:
         print(f"Meal Plan Error: {e}")
         return {"error": str(e)}
