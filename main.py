@@ -46,6 +46,14 @@ BUDGET_MAP = {
     "Medium": "₱251-₱500 per day",
     "High": "₱501+ per day"
 }
+
+# Static cooking tips for ALL users (always included)
+STATIC_COOKING_TIPS = [
+    "Prep ingredients the night before to save time.",
+    "Buy rice and cooking oil in bulk to reduce costs.",
+    "Use leftover rice for breakfast to minimize waste."
+]
+
 try:
     with open('gov_programs.json', 'r', encoding='utf-8') as f:
         GOV_PROGRAMS_DB = json.load(f)
@@ -258,16 +266,45 @@ async def generate_meal_plan(
     # Add optional fields based on toggles
     if request.include_grocery_list:
         json_structure["grocery_list"] = [
-            {"item": "ingredient name", "quantity": "amount", "estimated_price": 50}
+            {"item": "ingredient name", "quantity": "amount"}
+        ]
+        json_structure["grocery_total_estimate"] = 450
+    
+    # Cooking tips structure (Pro users will get 2 AI-generated tips added to the 3 static ones)
+    if tier == "pro":
+        json_structure["ai_cooking_tips"] = [
+            "AI-generated tip 1",
+            "AI-generated tip 2"
         ]
     
     if request.include_nutrition and tier == "pro":
-        json_structure["days"][0]["nutrition_summary"] = {
-            "calories": 2000,
-            "protein_g": 80,
-            "carbs_g": 250,
-            "fat_g": 65
-        }
+        # Add nutrition_summary to ALL days, not just first one
+        for i in range(day_count):
+            if i < len(json_structure["days"]):
+                json_structure["days"][i]["nutrition_summary"] = {
+                    "calories": 2000,
+                    "protein_g": 80,
+                    "carbs_g": 250,
+                    "fat_g": 65
+                }
+            else:
+                # For multi-day plans, add more day examples
+                json_structure["days"].append({
+                    "day_number": i + 1,
+                    "meals": {
+                        "breakfast": {"name": "Recipe name", "estimated_cost": 100},
+                        "lunch": {"name": "Recipe name", "estimated_cost": 150},
+                        "dinner": {"name": "Recipe name", "estimated_cost": 150},
+                        "snacks": {"name": "Snack name", "estimated_cost": 50}
+                    },
+                    "daily_total": 450,
+                    "nutrition_summary": {
+                        "calories": 2000,
+                        "protein_g": 80,
+                        "carbs_g": 250,
+                        "fat_g": 65
+                    }
+                })
     
     system_prompt = f"""
     You are 'Kaibigan Kusinero', an expert Filipino meal planner.
@@ -301,8 +338,44 @@ async def generate_meal_plan(
     - Create {day_count} day(s) of meal plans
     - Each meal MUST have an estimated_cost
     - grocery_list is {"REQUIRED" if request.include_grocery_list else "NOT required"}
-    - nutrition_summary is {"REQUIRED (Pro feature)" if request.include_nutrition and tier == "pro" else "NOT required"}
+    - If grocery_list is included: Do NOT add individual prices per item. Instead, provide grocery_total_estimate.
+    - grocery_total_estimate should be the total estimated cost for ALL groceries needed.
+    - nutrition_summary is {"REQUIRED for EVERY day (Pro feature)" if request.include_nutrition and tier == "pro" else "NOT required"}"""
+    
+    if tier == "pro":
+        system_prompt += """
+    - ai_cooking_tips: Provide exactly 2 unique, advanced cooking tips specific to THIS meal plan (ingredient substitutions, cooking techniques, Filipino culinary hacks)"""
+    
+    system_prompt += """
     - Return ONLY valid JSON, no additional text
+    """
+    
+    # Add extra emphasis for nutrition if requested
+    if request.include_nutrition and tier == "pro":
+        system_prompt += f"""
+    
+    🔴 CRITICAL: NUTRITION DATA MANDATORY 🔴
+    Every single day in your response MUST include a nutrition_summary object with these exact fields:
+    - calories: integer (total daily calories)
+    - protein_g: integer (total daily protein in grams)
+    - carbs_g: integer (total daily carbohydrates in grams)
+    - fat_g: integer (total daily fat in grams)
+    
+    Base these calculations on typical Filipino ingredient portions for {request.family_size} people.
+    """
+    
+    # Add AI cooking tips requirement only for Pro users
+    if tier == "pro":
+        system_prompt += """
+    
+    💡 AI COOKING TIPS REQUIREMENT (PRO FEATURE) 💡
+    Provide exactly 2 advanced, personalized cooking tips in the ai_cooking_tips array.
+    These should be:
+    - Specific to the recipes in THIS meal plan
+    - Advanced techniques (not basic tips)
+    - Filipino cooking hacks or regional variations
+    - Ingredient substitutions for cost/availability
+    - Pro-level time management strategies
     """
 
     try:
@@ -315,6 +388,17 @@ async def generate_meal_plan(
         )
         ai_response_json = chat_completion.choices[0].message.content
         meal_plan_data = json.loads(ai_response_json)
+        
+        # Add cooking tips to response
+        cooking_tips = STATIC_COOKING_TIPS.copy()  # Always include 3 static tips
+        
+        if tier == "pro" and "ai_cooking_tips" in meal_plan_data:
+            # Pro users get 3 static + 2 AI tips = 5 total
+            cooking_tips.extend(meal_plan_data["ai_cooking_tips"])
+            # Remove ai_cooking_tips from meal_plan_data (merge into cooking_tips)
+            del meal_plan_data["ai_cooking_tips"]
+        
+        meal_plan_data["cooking_tips"] = cooking_tips
         
         # Return structured response with share data
         return {
