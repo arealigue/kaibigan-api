@@ -45,6 +45,24 @@ class AICollectorRequest(BaseModel):
     amount: float
     tone: str  # "Gentle", "Firm", "Final"
 
+class CategoryCreate(BaseModel):
+    name: str
+    emoji: Optional[str] = None
+
+class TransactionRequest(BaseModel):
+    category_id: str
+    amount: float
+    transaction_type: str  # "expense" or "income"
+    description: Optional[str] = None
+    transaction_date: Optional[datetime.date] = None
+
+class TransactionUpdate(BaseModel):
+    category_id: Optional[str] = None
+    amount: Optional[float] = None
+    transaction_type: Optional[str] = None
+    description: Optional[str] = None
+    transaction_date: Optional[datetime.date] = None
+
 
 # --- IPON TRACKER ENDPOINTS ---
 
@@ -249,3 +267,280 @@ async def generate_utang_message(
         return {"message": ai_response}
     except Exception as e:
         return {"error": str(e)}
+
+
+# --- KAIBIGAN KABAN (EXPENSE TRACKER) ENDPOINTS ---
+
+@router.get("/kaban/categories")
+async def get_kaban_categories(
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """Get all expense categories (default + custom) (Pro only)"""
+    tier = profile['tier']
+    user_id = profile['id']
+    if tier != 'pro':
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Kaibigan Kaban is a Pro feature.")
+
+    try:
+        # Get default categories (user_id is NULL) and user's custom categories
+        categories_res = supabase.table('expense_categories').select('*').or_(f'user_id.is.null,user_id.eq.{user_id}').order('name', desc=False).execute()
+        return categories_res.data
+    except Exception as e:
+        print(f"Get Categories Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/kaban/categories")
+async def create_custom_category(
+    request: CategoryCreate,
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """Create a custom expense category (Pro only)"""
+    tier = profile['tier']
+    user_id = profile['id']
+    if tier != 'pro':
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Kaibigan Kaban is a Pro feature.")
+
+    try:
+        category_data = request.model_dump()
+        category_data['user_id'] = user_id
+        
+        insert_res = supabase.table('expense_categories').insert(category_data).execute()
+        
+        if not insert_res.data:
+            raise HTTPException(status_code=500, detail="Failed to create category.")
+            
+        return insert_res.data[0]
+    except Exception as e:
+        print(f"Create Category Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/kaban/transactions")
+async def create_kaban_transaction(
+    request: TransactionRequest,
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """Add a new expense or income transaction (Pro only)"""
+    tier = profile['tier']
+    user_id = profile['id']
+    if tier != 'pro':
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Kaibigan Kaban is a Pro feature.")
+
+    try:
+        # Verify category exists and user has access to it
+        category_res = supabase.table('expense_categories').select('id').or_(f'user_id.is.null,user_id.eq.{user_id}').eq('id', request.category_id).single().execute()
+        if not category_res.data:
+            raise HTTPException(status_code=404, detail="Category not found or access denied.")
+
+        tx_data = request.model_dump()
+        tx_data['user_id'] = user_id
+        
+        # Set transaction_date to today if not provided
+        if not tx_data['transaction_date']:
+            tx_data['transaction_date'] = datetime.date.today()
+        
+        insert_res = supabase.table('kaban_transactions').insert(tx_data).execute()
+        
+        if not insert_res.data:
+            raise HTTPException(status_code=500, detail="Failed to create transaction.")
+            
+        return insert_res.data[0]
+    except Exception as e:
+        print(f"Create Transaction Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/kaban/transactions")
+async def get_kaban_transactions(
+    profile: Annotated[dict, Depends(get_user_profile)],
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    transaction_type: Optional[str] = None,
+    category_id: Optional[str] = None
+):
+    """Get all transactions with optional filters (Pro only)"""
+    tier = profile['tier']
+    user_id = profile['id']
+    if tier != 'pro':
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Kaibigan Kaban is a Pro feature.")
+
+    try:
+        query = supabase.table('kaban_transactions').select('*, expense_categories(name, emoji)').eq('user_id', user_id)
+        
+        # Apply filters
+        if start_date:
+            query = query.gte('transaction_date', start_date)
+        if end_date:
+            query = query.lte('transaction_date', end_date)
+        if transaction_type:
+            query = query.eq('transaction_type', transaction_type)
+        if category_id:
+            query = query.eq('category_id', category_id)
+        
+        tx_res = query.order('transaction_date', desc=True).execute()
+        return tx_res.data
+    except Exception as e:
+        print(f"Get Transactions Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/kaban/transactions/{transaction_id}")
+async def update_kaban_transaction(
+    transaction_id: str,
+    request: TransactionUpdate,
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """Update an existing transaction (Pro only)"""
+    tier = profile['tier']
+    user_id = profile['id']
+    if tier != 'pro':
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Kaibigan Kaban is a Pro feature.")
+
+    try:
+        # Only update fields that are provided
+        update_data = {k: v for k, v in request.model_dump().items() if v is not None}
+        
+        if not update_data:
+            raise HTTPException(status_code=400, detail="No fields to update.")
+        
+        update_res = supabase.table('kaban_transactions').update(update_data).eq('id', transaction_id).eq('user_id', user_id).execute()
+        
+        if not update_res.data:
+            raise HTTPException(status_code=404, detail="Transaction not found or permission denied.")
+            
+        return update_res.data[0]
+    except Exception as e:
+        print(f"Update Transaction Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/kaban/transactions/{transaction_id}")
+async def delete_kaban_transaction(
+    transaction_id: str,
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """Delete a transaction (Pro only)"""
+    tier = profile['tier']
+    user_id = profile['id']
+    if tier != 'pro':
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Kaibigan Kaban is a Pro feature.")
+
+    try:
+        delete_res = supabase.table('kaban_transactions').delete().eq('id', transaction_id).eq('user_id', user_id).execute()
+        
+        if not delete_res.data:
+            raise HTTPException(status_code=404, detail="Transaction not found or permission denied.")
+            
+        return {"message": "Transaction deleted successfully", "deleted_id": transaction_id}
+    except Exception as e:
+        print(f"Delete Transaction Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/kaban/summary")
+async def get_kaban_summary(
+    profile: Annotated[dict, Depends(get_user_profile)],
+    year: Optional[int] = None,
+    month: Optional[int] = None
+):
+    """Get monthly income/expense summary (Pro only)"""
+    tier = profile['tier']
+    user_id = profile['id']
+    if tier != 'pro':
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Kaibigan Kaban is a Pro feature.")
+
+    try:
+        # Default to current month if not specified
+        if not year:
+            year = datetime.date.today().year
+        if not month:
+            month = datetime.date.today().month
+        
+        # Get start and end dates for the month
+        start_date = datetime.date(year, month, 1)
+        if month == 12:
+            end_date = datetime.date(year + 1, 1, 1)
+        else:
+            end_date = datetime.date(year, month + 1, 1)
+        
+        # Get all transactions for the month
+        tx_res = supabase.table('kaban_transactions').select('amount, transaction_type').eq('user_id', user_id).gte('transaction_date', start_date).lt('transaction_date', end_date).execute()
+        
+        total_income = sum(tx['amount'] for tx in tx_res.data if tx['transaction_type'] == 'income')
+        total_expense = sum(tx['amount'] for tx in tx_res.data if tx['transaction_type'] == 'expense')
+        balance = total_income - total_expense
+        
+        return {
+            "year": year,
+            "month": month,
+            "total_income": total_income,
+            "total_expense": total_expense,
+            "balance": balance,
+            "transaction_count": len(tx_res.data)
+        }
+    except Exception as e:
+        print(f"Get Summary Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/kaban/stats/category")
+async def get_category_stats(
+    profile: Annotated[dict, Depends(get_user_profile)],
+    year: Optional[int] = None,
+    month: Optional[int] = None
+):
+    """Get spending breakdown by category (Pro only)"""
+    tier = profile['tier']
+    user_id = profile['id']
+    if tier != 'pro':
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Kaibigan Kaban is a Pro feature.")
+
+    try:
+        # Default to current month if not specified
+        if not year:
+            year = datetime.date.today().year
+        if not month:
+            month = datetime.date.today().month
+        
+        # Get start and end dates for the month
+        start_date = datetime.date(year, month, 1)
+        if month == 12:
+            end_date = datetime.date(year + 1, 1, 1)
+        else:
+            end_date = datetime.date(year, month + 1, 1)
+        
+        # Get all expense transactions for the month with category info
+        tx_res = supabase.table('kaban_transactions').select('amount, category_id, expense_categories(name, emoji)').eq('user_id', user_id).eq('transaction_type', 'expense').gte('transaction_date', start_date).lt('transaction_date', end_date).execute()
+        
+        # Group by category
+        category_totals = {}
+        for tx in tx_res.data:
+            cat_id = tx['category_id']
+            cat_name = tx['expense_categories']['name'] if tx.get('expense_categories') else 'Unknown'
+            cat_emoji = tx['expense_categories']['emoji'] if tx.get('expense_categories') else '💰'
+            
+            if cat_id not in category_totals:
+                category_totals[cat_id] = {
+                    "category_id": cat_id,
+                    "category_name": cat_name,
+                    "emoji": cat_emoji,
+                    "total": 0,
+                    "count": 0
+                }
+            
+            category_totals[cat_id]['total'] += tx['amount']
+            category_totals[cat_id]['count'] += 1
+        
+        # Convert to sorted list
+        result = sorted(category_totals.values(), key=lambda x: x['total'], reverse=True)
+        
+        return {
+            "year": year,
+            "month": month,
+            "categories": result,
+            "total_categories": len(result)
+        }
+    except Exception as e:
+        print(f"Get Category Stats Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
