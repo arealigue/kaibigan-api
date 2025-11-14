@@ -208,4 +208,9 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
+# Internal documentation (not for public repo)
+*_enhancement.md
+*_roadmap.md
+*_internal.md
+
 .env
