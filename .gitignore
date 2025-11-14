@@ -212,5 +212,9 @@ __marimo__/
 *_enhancement.md
 *_roadmap.md
 *_internal.md
+DATABASE_MIGRATION_README.md
+QUICK_FIX.md
+CLEAN_SLATE_KABAN.sql
+database_migration.sql
 
 .env
