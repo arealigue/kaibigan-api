@@ -336,9 +336,12 @@ async def create_kaban_transaction(
         tx_data = request.model_dump()
         tx_data['user_id'] = user_id
         
-        # Set transaction_date to today if not provided
+        # Set transaction_date to today if not provided, and convert to string
         if not tx_data['transaction_date']:
-            tx_data['transaction_date'] = datetime.date.today()
+            tx_data['transaction_date'] = str(datetime.date.today())
+        else:
+            # Convert date to string for JSON serialization
+            tx_data['transaction_date'] = str(tx_data['transaction_date'])
         
         insert_res = supabase.table('kaban_transactions').insert(tx_data).execute()
         
