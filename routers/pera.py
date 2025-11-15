@@ -4,7 +4,7 @@ Handles all financial management endpoints: Ipon Tracker, Utang Tracker
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from typing import Annotated, Optional
+from typing import Annotated, Optional, List, Literal
 from dependencies import get_user_profile, supabase
 from openai import OpenAI
 import datetime
@@ -62,6 +62,39 @@ class TransactionUpdate(BaseModel):
     transaction_type: Optional[str] = None
     description: Optional[str] = None
     transaction_date: Optional[datetime.date] = None
+
+class CategoryInfo(BaseModel):
+    name: str
+    emoji: str
+
+class TransactionItem(BaseModel):
+    id: str
+    amount: float
+    description: Optional[str] = None
+    transaction_type: str
+    transaction_date: str
+    expense_categories: CategoryInfo
+
+class FinancialSummary(BaseModel):
+    total_income: float
+    total_expense: float
+    balance: float
+    transaction_count: int
+
+class AIFinancialAnalysisRequest(BaseModel):
+    analysis_type: Literal["budget", "spending", "savings"]
+    summary: FinancialSummary
+    transactions: List[TransactionItem]
+
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+class AIFinancialChatRequest(BaseModel):
+    message: str
+    summary: FinancialSummary
+    transactions: List[TransactionItem]
+    chat_history: Optional[List[ChatMessage]] = []
 
 
 # --- IPON TRACKER ENDPOINTS ---
@@ -548,4 +581,229 @@ async def get_category_stats(
         }
     except Exception as e:
         print(f"Get Category Stats Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- AI FINANCIAL ADVISOR ENDPOINTS ---
+
+@router.post("/ai/financial-analysis")
+async def ai_financial_analysis(
+    request: AIFinancialAnalysisRequest,
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """Generate AI-powered financial analysis (Pro only)"""
+    tier = profile['tier']
+    if tier != 'pro':
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="AI Financial Advisor is a Pro feature.")
+
+    try:
+        # Build context from transactions
+        category_breakdown = {}
+        for tx in request.transactions:
+            cat_name = tx.expense_categories.name
+            if tx.transaction_type == "expense":
+                if cat_name not in category_breakdown:
+                    category_breakdown[cat_name] = {"total": 0, "count": 0, "emoji": tx.expense_categories.emoji}
+                category_breakdown[cat_name]["total"] += tx.amount
+                category_breakdown[cat_name]["count"] += 1
+        
+        # Sort by total spending
+        top_categories = sorted(category_breakdown.items(), key=lambda x: x[1]["total"], reverse=True)[:5]
+        
+        # Calculate savings rate
+        savings_rate = (request.summary.balance / request.summary.total_income * 100) if request.summary.total_income > 0 else 0
+        
+        # Build analysis prompt based on type
+        if request.analysis_type == "budget":
+            system_prompt = f"""
+You are 'Kaibigan Pera', an expert Filipino financial advisor specializing in budget analysis.
+
+USER'S FINANCIAL DATA:
+- Monthly Income: ₱{request.summary.total_income:,.2f}
+- Monthly Expenses: ₱{request.summary.total_expense:,.2f}
+- Current Balance: ₱{request.summary.balance:,.2f}
+- Savings Rate: {savings_rate:.1f}%
+- Total Transactions: {request.summary.transaction_count}
+
+TOP SPENDING CATEGORIES:
+"""
+            for cat_name, cat_data in top_categories:
+                percentage = (cat_data["total"] / request.summary.total_expense * 100) if request.summary.total_expense > 0 else 0
+                system_prompt += f"- {cat_data['emoji']} {cat_name}: ₱{cat_data['total']:,.2f} ({percentage:.1f}%)\n"
+            
+            system_prompt += """
+
+YOUR TASK: Provide a comprehensive budget analysis with:
+1. **Income vs Expenses Assessment**: Is the user living within their means?
+2. **Budget Allocation**: Suggest ideal percentages using 50/30/20 rule (Needs/Wants/Savings) adjusted for Filipino context
+3. **Overspending Alert**: Identify categories where spending is too high
+4. **Actionable Recommendations**: Provide 3-5 specific, practical tips to improve their budget
+
+Be encouraging, culturally relevant (mention Filipino saving habits like "ipon", "tipid"), and use peso amounts.
+"""
+        
+        elif request.analysis_type == "spending":
+            system_prompt = f"""
+You are 'Kaibigan Pera', an expert Filipino financial advisor specializing in spending pattern analysis.
+
+USER'S FINANCIAL DATA:
+- Monthly Income: ₱{request.summary.total_income:,.2f}
+- Monthly Expenses: ₱{request.summary.total_expense:,.2f}
+- Current Balance: ₱{request.summary.balance:,.2f}
+- Total Transactions: {request.summary.transaction_count}
+
+SPENDING BREAKDOWN:
+"""
+            for cat_name, cat_data in top_categories:
+                percentage = (cat_data["total"] / request.summary.total_expense * 100) if request.summary.total_expense > 0 else 0
+                avg_per_tx = cat_data["total"] / cat_data["count"] if cat_data["count"] > 0 else 0
+                system_prompt += f"- {cat_data['emoji']} {cat_name}: ₱{cat_data['total']:,.2f} ({percentage:.1f}%) - {cat_data['count']} transactions (avg ₱{avg_per_tx:,.2f} each)\n"
+            
+            system_prompt += """
+
+YOUR TASK: Provide a detailed spending analysis with:
+1. **Spending Patterns**: Identify trends and habits from the transaction data
+2. **Category Insights**: Break down each major expense category
+3. **Filipino Context Comparison**: Compare with typical Filipino household spending (if relevant)
+4. **Cost-Cutting Opportunities**: Suggest 3-5 specific areas where they can reduce spending
+5. **Practical Tips**: Provide actionable "tipid tips" (saving strategies)
+
+Be specific, encouraging, and culturally relevant. Use peso amounts and Filipino terms where appropriate.
+"""
+        
+        else:  # savings
+            emergency_fund_target = request.summary.total_expense * 6  # 6 months of expenses
+            
+            system_prompt = f"""
+You are 'Kaibigan Pera', an expert Filipino financial advisor specializing in savings strategies.
+
+USER'S FINANCIAL DATA:
+- Monthly Income: ₱{request.summary.total_income:,.2f}
+- Monthly Expenses: ₱{request.summary.total_expense:,.2f}
+- Current Savings This Month: ₱{request.summary.balance:,.2f}
+- Savings Rate: {savings_rate:.1f}%
+- Recommended Emergency Fund: ₱{emergency_fund_target:,.2f} (6 months of expenses)
+
+TOP EXPENSES (Opportunities to Save):
+"""
+            for cat_name, cat_data in top_categories:
+                percentage = (cat_data["total"] / request.summary.total_expense * 100) if request.summary.total_expense > 0 else 0
+                system_prompt += f"- {cat_data['emoji']} {cat_name}: ₱{cat_data['total']:,.2f} ({percentage:.1f}%)\n"
+            
+            system_prompt += """
+
+YOUR TASK: Provide a comprehensive savings strategy with:
+1. **Current Savings Assessment**: Evaluate their {savings_rate:.1f}% savings rate
+2. **Realistic Savings Goals**: Based on their income and expenses, suggest achievable monthly savings targets
+3. **Emergency Fund Roadmap**: Create a step-by-step plan to build their emergency fund
+4. **Expense Reduction Strategies**: Identify 3-5 specific ways to reduce spending and increase savings
+5. **Filipino Saving Methods**: Suggest culturally relevant strategies (e.g., "paluwagan", "ipon challenge", envelope method)
+
+Be encouraging, realistic, and provide specific peso amounts. Focus on sustainable, practical advice.
+"""
+        
+        # Call OpenAI
+        user_message = f"Please analyze my finances and provide personalized {request.analysis_type} insights."
+        
+        chat_completion = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message}
+            ]
+        )
+        
+        ai_response = chat_completion.choices[0].message.content
+        return {"analysis": ai_response}
+    
+    except Exception as e:
+        print(f"AI Financial Analysis Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/ai/financial-chat")
+async def ai_financial_chat(
+    request: AIFinancialChatRequest,
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """Conversational AI financial assistant (Pro only)"""
+    tier = profile['tier']
+    if tier != 'pro':
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="AI Financial Advisor is a Pro feature.")
+
+    try:
+        # Build context from transactions
+        category_breakdown = {}
+        for tx in request.transactions:
+            cat_name = tx.expense_categories.name
+            if tx.transaction_type == "expense":
+                if cat_name not in category_breakdown:
+                    category_breakdown[cat_name] = {"total": 0, "count": 0, "emoji": tx.expense_categories.emoji}
+                category_breakdown[cat_name]["total"] += tx.amount
+                category_breakdown[cat_name]["count"] += 1
+        
+        top_categories = sorted(category_breakdown.items(), key=lambda x: x[1]["total"], reverse=True)[:5]
+        savings_rate = (request.summary.balance / request.summary.total_income * 100) if request.summary.total_income > 0 else 0
+        
+        # Build system prompt with user's financial context
+        system_prompt = f"""
+You are 'Kaibigan Pera', a friendly and knowledgeable Filipino financial advisor AI assistant.
+
+USER'S CURRENT FINANCIAL SITUATION:
+- Monthly Income: ₱{request.summary.total_income:,.2f}
+- Monthly Expenses: ₱{request.summary.total_expense:,.2f}
+- Current Balance: ₱{request.summary.balance:,.2f}
+- Savings Rate: {savings_rate:.1f}%
+- Total Transactions: {request.summary.transaction_count}
+
+TOP SPENDING CATEGORIES:
+"""
+        for cat_name, cat_data in top_categories:
+            percentage = (cat_data["total"] / request.summary.total_expense * 100) if request.summary.total_expense > 0 else 0
+            system_prompt += f"- {cat_data['emoji']} {cat_name}: ₱{cat_data['total']:,.2f} ({percentage:.1f}%) - {cat_data['count']} transactions\n"
+        
+        system_prompt += """
+
+YOUR ROLE:
+You are a conversational financial advisor helping Filipinos manage their money better. Be:
+- Conversational, friendly, and supportive (but professional)
+- Culturally aware (use Filipino terms like "ipon", "tipid", "paluwagan" when appropriate)
+- Specific and actionable (reference their actual data and amounts)
+- Encouraging about their progress
+- Realistic about goals based on their income level
+
+GUIDELINES:
+- Always use peso amounts (₱) when discussing money
+- Reference their specific transactions and spending patterns when relevant
+- Provide practical, actionable advice they can implement immediately
+- Consider typical Filipino household expenses and priorities
+- Be encouraging but honest about financial challenges
+- If they ask about a specific category, calculate percentages and give context
+- Suggest realistic goals based on their current income (₱{request.summary.total_income:,.2f})
+
+Keep responses conversational and around 150-250 words unless they ask for detailed analysis.
+"""
+        
+        # Build messages list with chat history
+        messages = [{"role": "system", "content": system_prompt}]
+        
+        # Add chat history if provided
+        if request.chat_history:
+            for msg in request.chat_history:
+                messages.append({"role": msg.role, "content": msg.content})
+        
+        # Add current user message
+        messages.append({"role": "user", "content": request.message})
+        
+        # Call OpenAI
+        chat_completion = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages
+        )
+        
+        ai_response = chat_completion.choices[0].message.content
+        return {"response": ai_response}
+    
+    except Exception as e:
+        print(f"AI Financial Chat Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
