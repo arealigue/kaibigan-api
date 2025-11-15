@@ -702,11 +702,13 @@ YOUR TASK: Provide a comprehensive savings strategy with:
 Be encouraging, realistic, and provide specific peso amounts. Focus on sustainable, practical advice.
 """
         
-        # Call OpenAI
+        # Call OpenAI with correct model
+        tier = profile['tier']
+        model_to_use = "gpt-5-mini" if tier == "pro" else "gpt-5-nano"
         user_message = f"Please analyze my finances and provide personalized {request.analysis_type} insights."
         
         chat_completion = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=model_to_use,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message}
@@ -795,9 +797,12 @@ Keep responses conversational and around 150-250 words unless they ask for detai
         # Add current user message
         messages.append({"role": "user", "content": request.message})
         
-        # Call OpenAI
+        # Call OpenAI with correct model
+        tier = profile['tier']
+        model_to_use = "gpt-5-mini" if tier == "pro" else "gpt-5-nano"
+        
         chat_completion = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=model_to_use,
             messages=messages
         )
         
