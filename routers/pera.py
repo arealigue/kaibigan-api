@@ -199,11 +199,25 @@ async def create_utang_record(
     request: UtangCreate,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
-    """Create a new debt record (Pro only)"""
+    """Create a new debt record - Free users limited to 1 unpaid debt, Pro users unlimited"""
     tier = profile['tier']
     user_id = profile['id']
+    
+    # Check debt limit for free users
     if tier != 'pro':
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Utang Tracker is a Pro feature.")
+        try:
+            unpaid_count_res = supabase.table('utang').select('id', count='exact').eq('user_id', user_id).eq('status', 'unpaid').execute()
+            unpaid_count = unpaid_count_res.count if unpaid_count_res.count else 0
+            
+            if unpaid_count >= 1:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Free users can only track 1 unpaid debt. Upgrade to Pro for unlimited tracking!"
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"Error checking debt count: {e}")
 
     try:
         utang_data = request.model_dump()
@@ -224,11 +238,9 @@ async def create_utang_record(
 async def get_utang_records(
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
-    """Get all unpaid debts for the user (Pro only)"""
-    tier = profile['tier']
+    """Get all unpaid debts for the user - Available to all users"""
     user_id = profile['id']
-    if tier != 'pro':
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Utang Tracker is a Pro feature.")
+    # No tier check - all authenticated users can view their debts
 
     try:
         utang_res = supabase.table('utang').select('*').eq('user_id', user_id).eq('status', 'unpaid').order('due_date', desc=False).execute()
@@ -244,11 +256,9 @@ async def update_utang_status(
     request: UtangUpdate,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
-    """Update debt status (mark as paid/unpaid) (Pro only)"""
-    tier = profile['tier']
+    """Update debt status (mark as paid/unpaid) - Available to all users"""
     user_id = profile['id']
-    if tier != 'pro':
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Utang Tracker is a Pro feature.")
+    # No tier check - all authenticated users can update their debts
 
     try:
         update_res = supabase.table('utang').update({"status": request.status}).eq('id', debt_id).eq('user_id', user_id).execute()
@@ -270,7 +280,7 @@ async def generate_utang_message(
     """Generate AI-powered debt collection message (Pro only)"""
     tier = profile['tier']
     if tier != 'pro':
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="AI Collector is a Pro feature.")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="AI Message Generator is a Pro feature. Upgrade to unlock!")
 
     tone_instructions = {
         "Gentle": "a very gentle, friendly, and 'nahihiya' reminder. Start with 'Hi [Name], kumusta?'.",
@@ -308,11 +318,9 @@ async def generate_utang_message(
 async def get_kaban_categories(
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
-    """Get all expense categories (default + custom) (Pro only)"""
-    tier = profile['tier']
+    """Get all expense categories (default + custom) - Free users see defaults only, Pro users see all"""
     user_id = profile['id']
-    if tier != 'pro':
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Kaibigan Kaban is a Pro feature.")
+    # No tier check - all authenticated users can see categories
 
     try:
         # Get default categories (user_id is NULL) and user's custom categories
@@ -332,7 +340,7 @@ async def create_custom_category(
     tier = profile['tier']
     user_id = profile['id']
     if tier != 'pro':
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Kaibigan Kaban is a Pro feature.")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Creating custom categories is a Pro feature. Upgrade to unlock!")
 
     try:
         category_data = request.model_dump()
@@ -354,11 +362,9 @@ async def create_kaban_transaction(
     request: TransactionRequest,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
-    """Add a new expense or income transaction (Pro only)"""
-    tier = profile['tier']
+    """Add a new expense or income transaction - Available to all users"""
     user_id = profile['id']
-    if tier != 'pro':
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Kaibigan Kaban is a Pro feature.")
+    # No tier check - all authenticated users can create transactions
 
     try:
         # Verify category exists and user has access to it (default or user's custom)
@@ -397,11 +403,9 @@ async def get_kaban_transactions(
     transaction_type: Optional[str] = None,
     category_id: Optional[str] = None
 ):
-    """Get all transactions with optional filters (Pro only)"""
-    tier = profile['tier']
+    """Get all transactions with optional filters - Available to all users"""
     user_id = profile['id']
-    if tier != 'pro':
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Kaibigan Kaban is a Pro feature.")
+    # No tier check - all authenticated users can view their transactions
 
     try:
         query = supabase.table('kaban_transactions').select('*, expense_categories(name, emoji)').eq('user_id', user_id)
@@ -429,11 +433,9 @@ async def update_kaban_transaction(
     request: TransactionUpdate,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
-    """Update an existing transaction (Pro only)"""
-    tier = profile['tier']
+    """Update an existing transaction - Available to all users"""
     user_id = profile['id']
-    if tier != 'pro':
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Kaibigan Kaban is a Pro feature.")
+    # No tier check - all authenticated users can update their own transactions
 
     try:
         # Only update fields that are provided
@@ -458,11 +460,9 @@ async def delete_kaban_transaction(
     transaction_id: str,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
-    """Delete a transaction (Pro only)"""
-    tier = profile['tier']
+    """Delete a transaction - Available to all users"""
     user_id = profile['id']
-    if tier != 'pro':
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Kaibigan Kaban is a Pro feature.")
+    # No tier check - all authenticated users can delete their own transactions
 
     try:
         delete_res = supabase.table('kaban_transactions').delete().eq('id', transaction_id).eq('user_id', user_id).execute()
@@ -482,11 +482,9 @@ async def get_kaban_summary(
     year: Optional[int] = None,
     month: Optional[int] = None
 ):
-    """Get monthly income/expense summary (Pro only)"""
-    tier = profile['tier']
+    """Get monthly income/expense summary - Available to all users"""
     user_id = profile['id']
-    if tier != 'pro':
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Kaibigan Kaban is a Pro feature.")
+    # No tier check - all authenticated users can see their summary
 
     try:
         # Default to current month if not specified
@@ -528,11 +526,9 @@ async def get_category_stats(
     year: Optional[int] = None,
     month: Optional[int] = None
 ):
-    """Get spending breakdown by category (Pro only)"""
-    tier = profile['tier']
+    """Get spending breakdown by category - Available to all users"""
     user_id = profile['id']
-    if tier != 'pro':
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Kaibigan Kaban is a Pro feature.")
+    # No tier check - all authenticated users can see category stats
 
     try:
         # Default to current month if not specified
