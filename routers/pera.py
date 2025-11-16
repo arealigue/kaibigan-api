@@ -48,6 +48,7 @@ class AICollectorRequest(BaseModel):
 class CategoryCreate(BaseModel):
     name: str
     emoji: Optional[str] = None
+    type: str  # "expense" or "income"
 
 class TransactionRequest(BaseModel):
     category_id: str
