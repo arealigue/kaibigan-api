@@ -488,8 +488,8 @@ async def generate_meal_plan(
                 "budget_per_head": budget_info["per_head_range"],
                 "total_daily_budget": budget_definition,
                 "budget_tier": budget_info["budget_range"],
-                "family": request.family_size,
-                "location": request.location,
+                "family": meal_plan_request.family_size,
+                "location": meal_plan_request.location,
                 "days": day_count,
                 "total_cost": meal_plan_data.get("total_cost_estimate", 0),
                 "includes_snacks": includes_snacks
@@ -500,7 +500,7 @@ async def generate_meal_plan(
         if budget_info["was_upgraded"]:
             response_data["notice"] = {
                 "type": "budget_upgraded",
-                "message": f"Budget automatically upgraded from {budget_info['original_budget']} to {budget_info['budget_range']} for family of {request.family_size} to ensure adequate nutrition.",
+                "message": f"Budget automatically upgraded from {budget_info['original_budget']} to {budget_info['budget_range']} for family of {meal_plan_request.family_size} to ensure adequate nutrition.",
                 "original_budget": budget_info["original_budget"],
                 "new_budget": budget_info["budget_range"]
             }
