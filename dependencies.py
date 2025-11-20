@@ -5,6 +5,8 @@ import os
 from fastapi import Header, HTTPException, status
 from typing import Annotated
 from supabase import create_client, Client
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 # Initialize Supabase client
 supabase_url = os.environ.get("SUPABASE_URL")
@@ -12,6 +14,9 @@ supabase_key = os.environ.get("SUPABASE_SERVICE_KEY")
 if not supabase_url or not supabase_key:
      raise Exception("Supabase URL and Service Key must be set in environment variables.")
 supabase: Client = create_client(supabase_url, supabase_key)
+
+# Initialize Rate Limiter
+limiter = Limiter(key_func=get_remote_address)
 
 
 async def get_user_profile(authorization: Annotated[str | None, Header()] = None):

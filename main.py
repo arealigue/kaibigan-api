@@ -15,15 +15,12 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 # Import shared dependencies and routers
-from dependencies import get_user_profile, supabase
+from dependencies import get_user_profile, supabase, limiter
 from routers import pera
 
 # --- 1. SETUP ---
 load_dotenv()
 client = OpenAI() 
-
-# Initialize rate limiter
-limiter = Limiter(key_func=get_remote_address)
 
 app = FastAPI(
     title="Kaibigan API",
@@ -251,8 +248,10 @@ async def get_consent_status(
 # --- 7. SECURE ENDPOINTS (Requires Auth) ---
 # ... (All your existing secure endpoints: /chat, /generate-meal-plan, /analyze-loan, etc. No changes.)
 @app.post("/chat")
+@limiter.limit("5/minute")
 async def chat_with_ai(
-    request: ChatRequest, 
+    request: Request,
+    chat_request: ChatRequest, 
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
     tier = profile['tier'] 
@@ -263,7 +262,7 @@ async def chat_with_ai(
             model=model_to_use,
             messages=[
                 {"role": "system", "content": "You are a helpful Filipino assistant."},
-                {"role": "user", "content": request.prompt}
+                {"role": "user", "content": chat_request.prompt}
             ]
         )
         ai_response = chat_completion.choices[0].message.content
@@ -511,8 +510,10 @@ async def generate_meal_plan(
         return {"error": str(e)}
 
 @app.post("/analyze-loan")
+@limiter.limit("5/minute")
 async def analyze_loan(
-    request: LoanAdvisorRequest, 
+    request: Request,
+    loan_request: LoanAdvisorRequest, 
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
     tier = profile['tier']
@@ -522,7 +523,7 @@ async def analyze_loan(
     model_to_use = "gpt-5-mini"
 
     try:
-        dti_ratio = (request.monthly_payment / request.monthly_income) * 100
+        dti_ratio = (loan_request.monthly_payment / loan_request.monthly_income) * 100
     except ZeroDivisionError:
         dti_ratio = 0
     
@@ -531,12 +532,12 @@ async def analyze_loan(
     You are friendly, empathetic, but give clear, practical advice.
     Your task is to analyze a loan for a user.
     USER'S FINANCIALS:
-    - Monthly Income: ₱{request.monthly_income:,.2f}
+    - Monthly Income: ₱{loan_request.monthly_income:,.2f}
     LOAN DETAILS:
-    - Loan Amount: ₱{request.loan_amount:,.2f}
-    - Monthly Payment: ₱{request.monthly_payment:,.2f}
-    - Loan Term: {request.loan_term_years} years
-    - Total Interest Paid: ₱{request.total_interest:,.2f}
+    - Loan Amount: ₱{loan_request.loan_amount:,.2f}
+    - Monthly Payment: ₱{loan_request.monthly_payment:,.2f}
+    - Loan Term: {loan_request.loan_term_years} years
+    - Total Interest Paid: ₱{loan_request.total_interest:,.2f}
 
     YOUR ANALYSIS (MUST INCLUDE):
     1. **Affordability:** The user's Debt-to-Income (DTI) ratio for this loan is {dti_ratio:.2f}%.
@@ -545,7 +546,7 @@ async def analyze_loan(
        - If 20% <= DTI < 30%: Call it 'Manageable, but tight'.
        - If DTI >= 30%: Call it 'High Risk / Not Recommended'.
     2. **The "So What?"**: Briefly explain *what this means* for their budget.
-    3. **Interest Analysis**: Comment on the ₱{request.total_interest:,.2f} in total interest.
+    3. **Interest Analysis**: Comment on the ₱{loan_request.total_interest:,.2f} in total interest.
     4. **Actionable Advice**: Give 2-3 bullet points of "Next Steps".
     
     Respond in a clear, friendly, and helpful tone. Start with a greeting.
@@ -567,8 +568,10 @@ async def analyze_loan(
         return {"error": str(e)}
 
 @app.post("/analyze-assistance")
+@limiter.limit("5/minute")
 async def analyze_assistance(
-    request: AssistanceAdvisorRequest, 
+    request: Request,
+    assistance_request: AssistanceAdvisorRequest, 
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
     tier = profile['tier']
@@ -584,10 +587,10 @@ async def analyze_assistance(
     {programs_context}
     
     A user needs help. Their situation:
-    - Employment: {request.employment_status}
-    - Has SSS: {request.has_sss}
-    - Has Pag-IBIG: {request.has_pagibig}
-    - Their Situation: "{request.situation_description}"
+    - Employment: {assistance_request.employment_status}
+    - Has SSS: {assistance_request.has_sss}
+    - Has Pag-IBIG: {assistance_request.has_pagibig}
+    - Their Situation: "{assistance_request.situation_description}"
 
     YOUR TASK:
     1. Analyze their situation.
@@ -616,8 +619,10 @@ async def analyze_assistance(
         return {"error": str(e)}
 
 @app.post("/recipes/create-from-notes")
+@limiter.limit("5/minute")
 async def create_recipe_from_notes(
-    request: RecipeNotesRequest,
+    request: Request,
+    recipe_request: RecipeNotesRequest,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
     tier = profile['tier']
@@ -640,9 +645,9 @@ async def create_recipe_from_notes(
     - "servings": An integer.
     - "prep_time_minutes": An integer.
 
-    USER'S NOTES for "{request.recipe_name}":
+    USER'S NOTES for "{recipe_request.recipe_name}":
     ---
-    {request.notes}
+    {recipe_request.notes}
     ---
 
     Now, return ONLY the valid JSON object. Do not add any conversational text.
@@ -662,10 +667,10 @@ async def create_recipe_from_notes(
         
         recipe_data = json.loads(ai_response_json)
         recipe_data['user_id'] = user_id
-        recipe_data['name'] = request.recipe_name
-        recipe_data['original_notes'] = request.notes
+        recipe_data['name'] = recipe_request.recipe_name
+        recipe_data['original_notes'] = recipe_request.notes
 
-        print(f"Saving recipe '{request.recipe_name}' to Supabase...")
+        print(f"Saving recipe '{recipe_request.recipe_name}' to Supabase...")
         insert_res = supabase.table('recipes').insert(recipe_data).execute()
 
         if not insert_res.data:

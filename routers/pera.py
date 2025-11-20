@@ -2,10 +2,10 @@
 PERA Module Router - Kaibigan Kaban System
 Handles all financial management endpoints: Ipon Tracker, Utang Tracker
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel
 from typing import Annotated, Optional, List, Literal
-from dependencies import get_user_profile, supabase
+from dependencies import get_user_profile, supabase, limiter
 from openai import OpenAI
 import datetime
 
@@ -274,8 +274,10 @@ async def update_utang_status(
 
 
 @router.post("/utang/generate-message")
+@limiter.limit("5/minute")
 async def generate_utang_message(
-    request: AICollectorRequest,
+    request: Request,
+    collector_request: AICollectorRequest,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
     """Generate AI-powered debt collection message (Pro only)"""
@@ -293,9 +295,9 @@ async def generate_utang_message(
     You are 'Kaibigan Pera', an AI assistant who helps Filipinos with the awkward task of collecting debt ('maningil').
     Your task is to draft a short, clear, and culturally-appropriate SMS or Messenger message.
     
-    TONE: The message must have a {request.tone} tone. Be {tone_instructions.get(request.tone, "a polite tone")}.
-    DEBTOR'S NAME: {request.debtor_name}
-    AMOUNT: ₱{request.amount:,.2f}
+    TONE: The message must have a {collector_request.tone} tone. Be {tone_instructions.get(collector_request.tone, "a polite tone")}.
+    DEBTOR'S NAME: {collector_request.debtor_name}
+    AMOUNT: ₱{collector_request.amount:,.2f}
     
     Respond *only* with the message itself. Do not add any extra text or explanation.
     """
@@ -584,8 +586,10 @@ async def get_category_stats(
 # --- AI FINANCIAL ADVISOR ENDPOINTS ---
 
 @router.post("/ai/financial-analysis")
+@limiter.limit("5/minute")
 async def ai_financial_analysis(
-    request: AIFinancialAnalysisRequest,
+    request: Request,
+    analysis_request: AIFinancialAnalysisRequest,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
     """Generate AI-powered financial analysis (Pro only)"""
@@ -596,7 +600,7 @@ async def ai_financial_analysis(
     try:
         # Build context from transactions
         category_breakdown = {}
-        for tx in request.transactions:
+        for tx in analysis_request.transactions:
             cat_name = tx.expense_categories.name
             if tx.transaction_type == "expense":
                 if cat_name not in category_breakdown:
@@ -608,24 +612,24 @@ async def ai_financial_analysis(
         top_categories = sorted(category_breakdown.items(), key=lambda x: x[1]["total"], reverse=True)[:5]
         
         # Calculate savings rate
-        savings_rate = (request.summary.balance / request.summary.total_income * 100) if request.summary.total_income > 0 else 0
+        savings_rate = (analysis_request.summary.balance / analysis_request.summary.total_income * 100) if analysis_request.summary.total_income > 0 else 0
         
         # Build analysis prompt based on type
-        if request.analysis_type == "budget":
+        if analysis_request.analysis_type == "budget":
             system_prompt = f"""
 You are 'Kaibigan Pera', an expert Filipino financial advisor specializing in budget analysis.
 
 USER'S FINANCIAL DATA:
-- Monthly Income: ₱{request.summary.total_income:,.2f}
-- Monthly Expenses: ₱{request.summary.total_expense:,.2f}
-- Current Balance: ₱{request.summary.balance:,.2f}
+- Monthly Income: ₱{analysis_request.summary.total_income:,.2f}
+- Monthly Expenses: ₱{analysis_request.summary.total_expense:,.2f}
+- Current Balance: ₱{analysis_request.summary.balance:,.2f}
 - Savings Rate: {savings_rate:.1f}%
-- Total Transactions: {request.summary.transaction_count}
+- Total Transactions: {analysis_request.summary.transaction_count}
 
 TOP SPENDING CATEGORIES:
 """
             for cat_name, cat_data in top_categories:
-                percentage = (cat_data["total"] / request.summary.total_expense * 100) if request.summary.total_expense > 0 else 0
+                percentage = (cat_data["total"] / analysis_request.summary.total_expense * 100) if analysis_request.summary.total_expense > 0 else 0
                 system_prompt += f"- {cat_data['emoji']} {cat_name}: ₱{cat_data['total']:,.2f} ({percentage:.1f}%)\n"
             
             system_prompt += """
@@ -639,20 +643,20 @@ YOUR TASK: Provide a comprehensive budget analysis with:
 Be encouraging, culturally relevant (mention Filipino saving habits like "ipon", "tipid"), and use peso amounts.
 """
         
-        elif request.analysis_type == "spending":
+        elif analysis_request.analysis_type == "spending":
             system_prompt = f"""
 You are 'Kaibigan Pera', an expert Filipino financial advisor specializing in spending pattern analysis.
 
 USER'S FINANCIAL DATA:
-- Monthly Income: ₱{request.summary.total_income:,.2f}
-- Monthly Expenses: ₱{request.summary.total_expense:,.2f}
-- Current Balance: ₱{request.summary.balance:,.2f}
-- Total Transactions: {request.summary.transaction_count}
+- Monthly Income: ₱{analysis_request.summary.total_income:,.2f}
+- Monthly Expenses: ₱{analysis_request.summary.total_expense:,.2f}
+- Current Balance: ₱{analysis_request.summary.balance:,.2f}
+- Total Transactions: {analysis_request.summary.transaction_count}
 
 SPENDING BREAKDOWN:
 """
             for cat_name, cat_data in top_categories:
-                percentage = (cat_data["total"] / request.summary.total_expense * 100) if request.summary.total_expense > 0 else 0
+                percentage = (cat_data["total"] / analysis_request.summary.total_expense * 100) if analysis_request.summary.total_expense > 0 else 0
                 avg_per_tx = cat_data["total"] / cat_data["count"] if cat_data["count"] > 0 else 0
                 system_prompt += f"- {cat_data['emoji']} {cat_name}: ₱{cat_data['total']:,.2f} ({percentage:.1f}%) - {cat_data['count']} transactions (avg ₱{avg_per_tx:,.2f} each)\n"
             
@@ -669,22 +673,22 @@ Be specific, encouraging, and culturally relevant. Use peso amounts and Filipino
 """
         
         else:  # savings
-            emergency_fund_target = request.summary.total_expense * 6  # 6 months of expenses
+            emergency_fund_target = analysis_request.summary.total_expense * 6  # 6 months of expenses
             
             system_prompt = f"""
 You are 'Kaibigan Pera', an expert Filipino financial advisor specializing in savings strategies.
 
 USER'S FINANCIAL DATA:
-- Monthly Income: ₱{request.summary.total_income:,.2f}
-- Monthly Expenses: ₱{request.summary.total_expense:,.2f}
-- Current Savings This Month: ₱{request.summary.balance:,.2f}
+- Monthly Income: ₱{analysis_request.summary.total_income:,.2f}
+- Monthly Expenses: ₱{analysis_request.summary.total_expense:,.2f}
+- Current Savings This Month: ₱{analysis_request.summary.balance:,.2f}
 - Savings Rate: {savings_rate:.1f}%
 - Recommended Emergency Fund: ₱{emergency_fund_target:,.2f} (6 months of expenses)
 
 TOP EXPENSES (Opportunities to Save):
 """
             for cat_name, cat_data in top_categories:
-                percentage = (cat_data["total"] / request.summary.total_expense * 100) if request.summary.total_expense > 0 else 0
+                percentage = (cat_data["total"] / analysis_request.summary.total_expense * 100) if analysis_request.summary.total_expense > 0 else 0
                 system_prompt += f"- {cat_data['emoji']} {cat_name}: ₱{cat_data['total']:,.2f} ({percentage:.1f}%)\n"
             
             system_prompt += """
@@ -702,7 +706,7 @@ Be encouraging, realistic, and provide specific peso amounts. Focus on sustainab
         # Call OpenAI with correct model
         tier = profile['tier']
         model_to_use = "gpt-5-mini" if tier == "pro" else "gpt-5-nano"
-        user_message = f"Please analyze my finances and provide personalized {request.analysis_type} insights."
+        user_message = f"Please analyze my finances and provide personalized {analysis_request.analysis_type} insights."
         
         chat_completion = client.chat.completions.create(
             model=model_to_use,
@@ -721,8 +725,10 @@ Be encouraging, realistic, and provide specific peso amounts. Focus on sustainab
 
 
 @router.post("/ai/financial-chat")
+@limiter.limit("5/minute")
 async def ai_financial_chat(
-    request: AIFinancialChatRequest,
+    request: Request,
+    chat_request: AIFinancialChatRequest,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
     """Conversational AI financial assistant (Pro only)"""
@@ -733,7 +739,7 @@ async def ai_financial_chat(
     try:
         # Build context from transactions
         category_breakdown = {}
-        for tx in request.transactions:
+        for tx in chat_request.transactions:
             cat_name = tx.expense_categories.name
             if tx.transaction_type == "expense":
                 if cat_name not in category_breakdown:
@@ -742,23 +748,23 @@ async def ai_financial_chat(
                 category_breakdown[cat_name]["count"] += 1
         
         top_categories = sorted(category_breakdown.items(), key=lambda x: x[1]["total"], reverse=True)[:5]
-        savings_rate = (request.summary.balance / request.summary.total_income * 100) if request.summary.total_income > 0 else 0
+        savings_rate = (chat_request.summary.balance / chat_request.summary.total_income * 100) if chat_request.summary.total_income > 0 else 0
         
         # Build system prompt with user's financial context
         system_prompt = f"""
 You are 'Kaibigan Pera', a friendly and knowledgeable Filipino financial advisor AI assistant.
 
 USER'S CURRENT FINANCIAL SITUATION:
-- Monthly Income: ₱{request.summary.total_income:,.2f}
-- Monthly Expenses: ₱{request.summary.total_expense:,.2f}
-- Current Balance: ₱{request.summary.balance:,.2f}
+- Monthly Income: ₱{chat_request.summary.total_income:,.2f}
+- Monthly Expenses: ₱{chat_request.summary.total_expense:,.2f}
+- Current Balance: ₱{chat_request.summary.balance:,.2f}
 - Savings Rate: {savings_rate:.1f}%
-- Total Transactions: {request.summary.transaction_count}
+- Total Transactions: {chat_request.summary.transaction_count}
 
 TOP SPENDING CATEGORIES:
 """
         for cat_name, cat_data in top_categories:
-            percentage = (cat_data["total"] / request.summary.total_expense * 100) if request.summary.total_expense > 0 else 0
+            percentage = (cat_data["total"] / chat_request.summary.total_expense * 100) if chat_request.summary.total_expense > 0 else 0
             system_prompt += f"- {cat_data['emoji']} {cat_name}: ₱{cat_data['total']:,.2f} ({percentage:.1f}%) - {cat_data['count']} transactions\n"
         
         system_prompt += """
@@ -778,7 +784,7 @@ GUIDELINES:
 - Consider typical Filipino household expenses and priorities
 - Be encouraging but honest about financial challenges
 - If they ask about a specific category, calculate percentages and give context
-- Suggest realistic goals based on their current income (₱{request.summary.total_income:,.2f})
+- Suggest realistic goals based on their current income (₱{chat_request.summary.total_income:,.2f})
 
 Keep responses conversational and around 150-250 words unless they ask for detailed analysis.
 """
@@ -787,12 +793,12 @@ Keep responses conversational and around 150-250 words unless they ask for detai
         messages = [{"role": "system", "content": system_prompt}]
         
         # Add chat history if provided
-        if request.chat_history:
-            for msg in request.chat_history:
+        if chat_request.chat_history:
+            for msg in chat_request.chat_history:
                 messages.append({"role": msg.role, "content": msg.content})
         
         # Add current user message
-        messages.append({"role": "user", "content": request.message})
+        messages.append({"role": "user", "content": chat_request.message})
         
         # Call OpenAI with correct model
         tier = profile['tier']
