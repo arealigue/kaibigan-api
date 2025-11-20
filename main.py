@@ -60,6 +60,11 @@ def get_budget_definition(budget_range: str, family_size: int):
     Calculate total daily budget based on per-head rates and family size.
     Auto-upgrades Ultra Budget to Budget-Friendly for families of 7+.
     """
+    # Validate budget_range and provide default if invalid
+    valid_budgets = ["Ultra Budget", "Budget-Friendly", "Comfortable"]
+    if budget_range not in valid_budgets:
+        budget_range = "Budget-Friendly"  # Default to Budget-Friendly if invalid
+    
     # Auto-upgrade logic for large families
     original_budget = budget_range
     if family_size >= 7 and budget_range == "Ultra Budget":
@@ -104,7 +109,7 @@ class ChatRequest(BaseModel):
 
 class MealPlanRequest(BaseModel):
     family_size: int = 2
-    budget_range: str = "Medium"
+    budget_range: str = "Budget-Friendly"
     location: str = "Philippines"
     days: int = 1
     skill_level: str = "Home Cook"
