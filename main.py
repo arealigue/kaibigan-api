@@ -10,6 +10,9 @@ from dotenv import load_dotenv
 from typing import Annotated, List, Optional
 from fastapi.middleware.cors import CORSMiddleware 
 import datetime
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 # Import shared dependencies and routers
 from dependencies import get_user_profile, supabase
@@ -18,6 +21,9 @@ from routers import pera
 # --- 1. SETUP ---
 load_dotenv()
 client = OpenAI() 
+
+# Initialize rate limiter
+limiter = Limiter(key_func=get_remote_address)
 
 app = FastAPI(
     title="Kaibigan API",
@@ -36,6 +42,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add rate limiter to app state
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # --- 2.5. INCLUDE ROUTERS ---
 app.include_router(pera.router)
@@ -251,8 +261,10 @@ async def chat_with_ai(
         return {"error": str(e)}
 
 @app.post("/generate-meal-plan")
+@limiter.limit("5/minute")
 async def generate_meal_plan(
-    request: MealPlanRequest, 
+    request: MealPlanRequest,
+    http_request: Request,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
     tier = profile['tier'] 
