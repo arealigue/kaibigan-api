@@ -45,7 +45,18 @@ app.add_middleware(
 
 # Add rate limiter to app state
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Custom rate limit error handler with CORS headers
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    response = await _rate_limit_exceeded_handler(request, exc)
+    # Add CORS headers to rate limit response
+    origin = request.headers.get("origin", "")
+    if origin in ["http://localhost:3000", "https://kaibigan-web.vercel.app"]:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+    return response
+
+app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
 
 # --- 2.5. INCLUDE ROUTERS ---
 app.include_router(pera.router)
