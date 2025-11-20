@@ -274,8 +274,8 @@ async def chat_with_ai(
 @app.post("/generate-meal-plan")
 @limiter.limit("5/minute")
 async def generate_meal_plan(
-    request: MealPlanRequest,
-    http_request: Request,
+    request: Request,
+    meal_plan_request: MealPlanRequest,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
     tier = profile['tier'] 
@@ -284,18 +284,18 @@ async def generate_meal_plan(
 
     if tier == 'pro':
         model_to_use = "gpt-5-mini"
-        day_count = request.days
+        day_count = meal_plan_request.days
     else:
         # Free tier limitations
-        request.restrictions = []
-        request.allergies = []
-        request.skill_level = "Home Cook"
-        request.time_limit = 0
-        request.include_nutrition = False  # Nutrition is PRO only
+        meal_plan_request.restrictions = []
+        meal_plan_request.allergies = []
+        meal_plan_request.skill_level = "Home Cook"
+        meal_plan_request.time_limit = 0
+        meal_plan_request.include_nutrition = False  # Nutrition is PRO only
         day_count = 1
 
     # Get budget definition with auto-upgrade logic
-    budget_info = get_budget_definition(request.budget_range, request.family_size)
+    budget_info = get_budget_definition(meal_plan_request.budget_range, meal_plan_request.family_size)
     budget_definition = budget_info["total_range"]
     includes_snacks = budget_info["includes_snacks"]
     
@@ -322,7 +322,7 @@ async def generate_meal_plan(
     }
     
     # Add optional fields based on toggles
-    if request.include_grocery_list:
+    if meal_plan_request.include_grocery_list:
         json_structure["grocery_list"] = [
             {"item": "ingredient name", "quantity": "amount"}
         ]
@@ -335,7 +335,7 @@ async def generate_meal_plan(
             "AI-generated tip 2"
         ]
     
-    if request.include_nutrition and tier == "pro":
+    if meal_plan_request.include_nutrition and tier == "pro":
         # Add nutrition_summary to ALL days, not just first one
         for i in range(day_count):
             if i < len(json_structure["days"]):
@@ -373,9 +373,9 @@ async def generate_meal_plan(
     
     STRICT RULES:
     1. Cuisine: Filipino recipes by default.
-    2. Audience: Plan is for {request.family_size} people.
+    2. Audience: Plan is for {meal_plan_request.family_size} people.
     3. Budget: Adhere *strictly* to a '{budget_definition}' (₱{budget_info['per_head_min']}-₱{budget_info['per_head_max']} per person).
-    4. Location: User is in '{request.location}'. Use local ingredients or substitutes.
+    4. Location: User is in '{meal_plan_request.location}'. Use local ingredients or substitutes.
     5. Meals: Include {meal_structure}.
     6. ALWAYS include estimated_cost for EVERY meal in Philippine Pesos (₱).
     7. Calculate daily_total and total_cost_estimate accurately.
@@ -396,18 +396,18 @@ async def generate_meal_plan(
         system_prompt += f"""
     
     📢 NOTE: Budget was auto-upgraded from {budget_info['original_budget']} to {budget_info['budget_range']} 
-    for a family of {request.family_size} to ensure adequate nutrition.
+    for a family of {meal_plan_request.family_size} to ensure adequate nutrition.
     """
     
     if tier == "pro":
         system_prompt += "\n    --- PRO USER RULES ---"
-        if request.restrictions:
-            system_prompt += f"\n    7. Dietary Restrictions: Must be {', '.join(request.restrictions)}."
-        if request.allergies:
-            system_prompt += f"\n    8. Allergies: MUST NOT contain {', '.join(request.allergies)}."
-        system_prompt += f"\n    9. Skill Level: Recipes must be for a '{request.skill_level}' cook."
-        if request.time_limit > 0:
-            system_prompt += f"\n    10. Time Limit: All recipes must be doable in {request.time_limit} minutes or less."
+        if meal_plan_request.restrictions:
+            system_prompt += f"\n    7. Dietary Restrictions: Must be {', '.join(meal_plan_request.restrictions)}."
+        if meal_plan_request.allergies:
+            system_prompt += f"\n    8. Allergies: MUST NOT contain {', '.join(meal_plan_request.allergies)}."
+        system_prompt += f"\n    9. Skill Level: Recipes must be for a '{meal_plan_request.skill_level}' cook."
+        if meal_plan_request.time_limit > 0:
+            system_prompt += f"\n    10. Time Limit: All recipes must be doable in {meal_plan_request.time_limit} minutes or less."
     
     system_prompt += f"""
 
@@ -417,10 +417,10 @@ async def generate_meal_plan(
     IMPORTANT:
     - Create {day_count} day(s) of meal plans
     - Each meal MUST have an estimated_cost
-    - grocery_list is {"REQUIRED" if request.include_grocery_list else "NOT required"}
+    - grocery_list is {"REQUIRED" if meal_plan_request.include_grocery_list else "NOT required"}
     - If grocery_list is included: Do NOT add individual prices per item. Instead, provide grocery_total_estimate.
     - grocery_total_estimate should be the total estimated cost for ALL groceries needed.
-    - nutrition_summary is {"REQUIRED for EVERY day (Pro feature)" if request.include_nutrition and tier == "pro" else "NOT required"}"""
+    - nutrition_summary is {"REQUIRED for EVERY day (Pro feature)" if meal_plan_request.include_nutrition and tier == "pro" else "NOT required"}"""
     
     if tier == "pro":
         system_prompt += """
@@ -431,7 +431,7 @@ async def generate_meal_plan(
     """
     
     # Add extra emphasis for nutrition if requested
-    if request.include_nutrition and tier == "pro":
+    if meal_plan_request.include_nutrition and tier == "pro":
         system_prompt += f"""
     
     🔴 CRITICAL: NUTRITION DATA MANDATORY 🔴
@@ -441,7 +441,7 @@ async def generate_meal_plan(
     - carbs_g: integer (total daily carbohydrates in grams)
     - fat_g: integer (total daily fat in grams)
     
-    Base these calculations on typical Filipino ingredient portions for {request.family_size} people.
+    Base these calculations on typical Filipino ingredient portions for {meal_plan_request.family_size} people.
     """
     
     # Add AI cooking tips requirement only for Pro users
