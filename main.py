@@ -190,6 +190,43 @@ def search_assistance(keyword: str = ""):
     return {"programs": results}
 
 
+# --- 6. PRIVACY CONSENT ENDPOINTS ---
+@app.post("/user/consent")
+async def record_privacy_consent(
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """Record user's privacy policy consent with timestamp"""
+    user_id = profile['id']
+    
+    try:
+        # Update user's profile with consent
+        consent_data = {
+            'privacy_consent': True,
+            'privacy_consent_date': datetime.datetime.now(datetime.timezone.utc).isoformat()
+        }
+        
+        supabase.table('profiles').update(consent_data).eq('id', user_id).execute()
+        
+        return {
+            "success": True,
+            "message": "Privacy consent recorded",
+            "consent_date": consent_data['privacy_consent_date']
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to record consent: {str(e)}")
+
+
+@app.get("/user/consent-status")
+async def get_consent_status(
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """Check if user has consented to privacy policy"""
+    return {
+        "has_consented": profile.get('privacy_consent', False),
+        "consent_date": profile.get('privacy_consent_date')
+    }
+
+
 # --- 7. SECURE ENDPOINTS (Requires Auth) ---
 # ... (All your existing secure endpoints: /chat, /generate-meal-plan, /analyze-loan, etc. No changes.)
 @app.post("/chat")
