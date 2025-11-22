@@ -5,7 +5,7 @@ import hashlib
 import base64
 from fastapi import FastAPI, Depends, HTTPException, status, Header, Request
 from pydantic import BaseModel
-from openai import OpenAI
+from openai import AsyncOpenAI
 from dotenv import load_dotenv
 from typing import Annotated, List, Optional
 from fastapi.middleware.cors import CORSMiddleware 
@@ -20,7 +20,7 @@ from routers import pera
 
 # --- 1. SETUP ---
 load_dotenv()
-client = OpenAI() 
+client = AsyncOpenAI() 
 
 app = FastAPI(
     title="Kaibigan API",
@@ -258,7 +258,7 @@ async def chat_with_ai(
     model_to_use = "gpt-5-mini" if tier == "pro" else "gpt-5-nano"
 
     try:
-        chat_completion = client.chat.completions.create(
+        chat_completion = await client.chat.completions.create(
             model=model_to_use,
             messages=[
                 {"role": "system", "content": "You are a helpful Filipino assistant."},
@@ -458,7 +458,7 @@ async def generate_meal_plan(
     """
 
     try:
-        chat_completion = client.chat.completions.create(
+        chat_completion = await client.chat.completions.create(
             model=model_to_use,
             response_format={"type": "json_object"},  # Force JSON output
             messages=[
@@ -555,7 +555,7 @@ async def analyze_loan(
     user_prompt = "Here is my loan and my income. Can you please analyze it for me?"
 
     try:
-        chat_completion = client.chat.completions.create(
+        chat_completion = await client.chat.completions.create(
             model=model_to_use,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -606,7 +606,7 @@ async def analyze_assistance(
     user_prompt = "Based on my situation, what help can I get?"
 
     try:
-        chat_completion = client.chat.completions.create(
+        chat_completion = await client.chat.completions.create(
             model=model_to_use,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -655,7 +655,7 @@ async def create_recipe_from_notes(
 
     try:
         print(f"Calling GPT-5-Mini for user {user_id}...")
-        chat_completion = client.chat.completions.create(
+        chat_completion = await client.chat.completions.create(
             model="gpt-5-mini",
             response_format={ "type": "json_object" },
             messages=[

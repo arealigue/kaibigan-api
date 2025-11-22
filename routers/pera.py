@@ -6,11 +6,11 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel
 from typing import Annotated, Optional, List, Literal
 from dependencies import get_user_profile, supabase, limiter
-from openai import OpenAI
+from openai import AsyncOpenAI
 import datetime
 
 # Initialize OpenAI client
-client = OpenAI()
+client = AsyncOpenAI()
 
 # Router configuration
 router = APIRouter(
@@ -303,7 +303,7 @@ async def generate_utang_message(
     """
     
     try:
-        chat_completion = client.chat.completions.create(
+        chat_completion = await client.chat.completions.create(
             model="gpt-5-mini",
             messages=[
                 {"role": "system", "content": system_prompt}
@@ -708,7 +708,7 @@ Be encouraging, realistic, and provide specific peso amounts. Focus on sustainab
         model_to_use = "gpt-5-mini" if tier == "pro" else "gpt-5-nano"
         user_message = f"Please analyze my finances and provide personalized {analysis_request.analysis_type} insights."
         
-        chat_completion = client.chat.completions.create(
+        chat_completion = await client.chat.completions.create(
             model=model_to_use,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -804,7 +804,7 @@ Keep responses conversational and around 150-250 words unless they ask for detai
         tier = profile['tier']
         model_to_use = "gpt-5-mini" if tier == "pro" else "gpt-5-nano"
         
-        chat_completion = client.chat.completions.create(
+        chat_completion = await client.chat.completions.create(
             model=model_to_use,
             messages=messages
         )
