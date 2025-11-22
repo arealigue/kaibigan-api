@@ -45,7 +45,7 @@ app.state.limiter = limiter
 
 # Custom rate limit error handler with CORS headers
 async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
-    response = await _rate_limit_exceeded_handler(request, exc)
+    response = _rate_limit_exceeded_handler(request, exc)
     # Add CORS headers to rate limit response
     origin = request.headers.get("origin", "")
     if origin in ["http://localhost:3000", "https://kaibigan-web.vercel.app"]:
