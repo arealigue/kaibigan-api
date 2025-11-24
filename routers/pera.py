@@ -335,8 +335,10 @@ async def get_kaban_categories(
 
 
 @router.post("/kaban/categories")
+@limiter.limit("10/minute")
 async def create_custom_category(
-    request: CategoryCreate,
+    request: Request,
+    category_request: CategoryCreate,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
     """Create a custom expense category (Pro only)"""
@@ -361,8 +363,10 @@ async def create_custom_category(
 
 
 @router.post("/kaban/transactions")
+@limiter.limit("30/minute")
 async def create_kaban_transaction(
-    request: TransactionRequest,
+    request: Request,
+    transaction_request: TransactionRequest,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
     """Add a new expense or income transaction - Available to all users"""
