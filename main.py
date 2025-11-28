@@ -33,7 +33,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000", 
-        "https://kaibigan-web.vercel.app" # <-- Make sure this matches your Vercel URL
+        "https://kaibigan-web.vercel.app",
+        "https://app.kaibigangpt.com"
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -48,7 +49,7 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     response = _rate_limit_exceeded_handler(request, exc)
     # Add CORS headers to rate limit response
     origin = request.headers.get("origin", "")
-    if origin in ["http://localhost:3000", "https://kaibigan-web.vercel.app"]:
+    if origin in ["http://localhost:3000", "https://kaibigan-web.vercel.app", "https://app.kaibigangpt.com"]:
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Access-Control-Allow-Credentials"] = "true"
     return response
