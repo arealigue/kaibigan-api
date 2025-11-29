@@ -335,6 +335,13 @@ async def generate_meal_plan(
             "AI-generated tip 2"
         ]
     
+    # OFW Ingredient Substitutions (when location is "Abroad")
+    if meal_plan_request.location == "Abroad":
+        json_structure["ofw_substitutions"] = [
+            {"filipino_ingredient": "Patis (Fish Sauce)", "substitute": "Thai fish sauce or Vietnamese nuoc mam", "notes": "Available in most Asian groceries"},
+            {"filipino_ingredient": "Calamansi", "substitute": "1:1 mix of lime and lemon juice", "notes": "Closest flavor match"}
+        ]
+    
     if meal_plan_request.include_nutrition and tier == "pro":
         # Add nutrition_summary to ALL days, not just first one
         for i in range(day_count):
@@ -409,6 +416,36 @@ async def generate_meal_plan(
         if meal_plan_request.time_limit > 0:
             system_prompt += f"\n    10. Time Limit: All recipes must be doable in {meal_plan_request.time_limit} minutes or less."
     
+    # Add OFW-specific prompt when user is abroad
+    if meal_plan_request.location == "Abroad":
+        system_prompt += """
+    
+    🌏 OFW INGREDIENT SUBSTITUTIONS (USER IS ABROAD) 🌏
+    The user is an OFW (Overseas Filipino Worker) and may not have access to authentic Filipino ingredients.
+    
+    YOU MUST include an "ofw_substitutions" array in your JSON response with 5-8 ingredient substitutions.
+    Each substitution must have:
+    - "filipino_ingredient": The original Filipino ingredient name
+    - "substitute": What they can use instead (available in most countries)
+    - "notes": Brief tips on finding it or adjusting the recipe
+    
+    Common substitutions to consider:
+    - Patis (fish sauce) → Thai fish sauce, Vietnamese nuoc mam
+    - Calamansi → Equal parts lime and lemon juice
+    - Banana leaves → Aluminum foil or parchment paper (for wrapping)
+    - Achuete (annatto) → Paprika + turmeric mix
+    - Bagoong → Shrimp paste (Malaysian/Thai) or anchovy paste
+    - Kamias → Green mango or tamarind
+    - Kangkong → Spinach or water spinach if available
+    - Tamarind concentrate → Tamarind paste from Asian stores
+    - Gata (coconut milk) → Canned coconut milk (widely available)
+    - Siling labuyo → Thai bird's eye chili
+    - Kesong puti → Feta cheese or paneer
+    - Longganisa → Chorizo or Italian sausage with added garlic
+    
+    Focus on ingredients that ARE used in the recipes you're suggesting.
+    """
+    
     system_prompt += f"""
 
     OUTPUT FORMAT (JSON):
@@ -425,6 +462,11 @@ async def generate_meal_plan(
     if tier == "pro":
         system_prompt += """
     - ai_cooking_tips: Provide exactly 2 unique, advanced cooking tips specific to THIS meal plan (ingredient substitutions, cooking techniques, Filipino culinary hacks)"""
+    
+    # Add OFW substitutions requirement
+    if meal_plan_request.location == "Abroad":
+        system_prompt += """
+    - ofw_substitutions: REQUIRED - Include 5-8 ingredient substitutions for Filipino ingredients used in this meal plan"""
     
     system_prompt += """
     - Return ONLY valid JSON, no additional text
