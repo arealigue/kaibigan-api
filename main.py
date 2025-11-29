@@ -689,69 +689,79 @@ async def create_recipe_from_notes(
 async def webhook_lemonsqueezy(request: Request):
     """
     Listens for events from Lemon Squeezy and updates the user's tier.
-    This is secured by a signing secret, not a user token.
     """
     try:
+        # 1. Get the Secret
         secret = os.environ.get("LEMONSQUEEZY_SIGNING_SECRET")
         if not secret:
             print("WEBHOOK ERROR: LEMONSQUEEZY_SIGNING_SECRET is not set.")
             raise HTTPException(status_code=500, detail="Webhook not configured")
             
-        signature = request.headers.get("X-Signature", "")
+        # 2. Get the Signature from Headers
+        signature = request.headers.get("X-Signature")
+        if not signature:
+             raise HTTPException(status_code=400, detail="No signature header")
+
+        # 3. Get the Raw Body (Critical for HMAC)
         payload = await request.body()
         
-        digest = hmac.new(secret.encode(), payload, hashlib.sha256).digest()
-        computed_signature = base64.b64encode(digest).decode()
+        # 4. Create the Digest (Use hexdigest for Lemon Squeezy)
+        digest = hmac.new(secret.encode('utf-8'), payload, hashlib.sha256).hexdigest()
 
-        if not hmac.compare_digest(computed_signature, signature):
+        # 5. Secure Compare
+        if not hmac.compare_digest(digest, signature):
             print("WEBHOOK ERROR: Invalid signature")
-            raise HTTPException(status_code=400, detail="Invalid signature")
+            raise HTTPException(status_code=401, detail="Invalid signature")
 
-        data = json.loads(payload.decode())
+        # 6. Parse JSON
+        data = json.loads(payload)
         event_name = data.get("meta", {}).get("event_name")
+        attributes = data.get("data", {}).get("attributes", {})
         
-        user_email = data.get("data", {}).get("attributes", {}).get("user_email")
+        # 7. Identify User
+        user_id = data.get("meta", {}).get("custom_data", {}).get("user_id")
+        user_email = attributes.get("user_email")
         
-        if not user_email:
-            print(f"WEBHOOK: No user email in event '{event_name}'")
-            return {"status": "ok", "message": "No email, but webhook received."}
-
-        status_val = data.get("data", {}).get("attributes", {}).get("status")
-        new_tier = "free"
+        status_val = attributes.get("status")
         
-        # --- NEW LOGIC FOR PROMO COUNTER ---
-        if event_name == "subscription_created" and status_val == "active":
-            new_tier = "pro"
+        # --- LOGIC HANDLER (Updated for "tier" column) ---
+        
+        # CASE A: Subscription Created/Active (Upgrade to PRO)
+        if event_name in ["subscription_created", "subscription_updated"] and status_val == "active":
+            print(f"WEBHOOK: Activating PRO for {user_email}")
             
-            # Now, decrement the promo spots
-            try:
-                # 1. Get current spots
-                promo_res = supabase.table('launch_promo').select('spots_remaining').eq('id', 1).single().execute()
-                if promo_res.data and promo_res.data['spots_remaining'] > 0:
-                    # 2. Decrement
-                    new_spots = promo_res.data['spots_remaining'] - 1
-                    supabase.table('launch_promo').update({'spots_remaining': new_spots}).eq('id', 1).execute()
-                    print(f"WEBHOOK: Promo spot taken. {new_spots} remaining.")
-                else:
-                    print("WEBHOOK: Promo is over or spots are 0.")
-            except Exception as e:
-                print(f"WEBHOOK: Failed to decrement promo spots. Error: {e}")
-                # We don't stop the webhook for this, just log it.
-        
-        elif event_name == "subscription_updated" and status_val == "active":
-            new_tier = "pro"
-        # --- END OF NEW LOGIC ---
-        
-        print(f"WEBHOOK: Attempting to set {user_email} to '{new_tier}'...")
-        update_res = supabase.table("profiles").update({"tier": new_tier}).eq("email", user_email).execute()
-        
-        if not update_res.data:
-            print(f"WEBHOOK ERROR: No profile found for {user_email}")
-            return {"status": "error", "message": "Profile not found"}
+            # Update to "pro"
+            update_data = {"tier": "pro"} 
+            
+            if user_id:
+                response = supabase.table("profiles").update(update_data).eq("id", user_id).execute()
+            else:
+                response = supabase.table("profiles").update(update_data).eq("email", user_email).execute()
 
-        print(f"WEBHOOK SUCCESS: User {user_email} is now '{new_tier}'")
+            # Decrement Promo Logic (Only on creation)
+            if event_name == "subscription_created":
+                 try:
+                    promo_res = supabase.table('launch_promo').select('spots_remaining').eq('id', 1).single().execute()
+                    if promo_res.data and promo_res.data['spots_remaining'] > 0:
+                        new_spots = promo_res.data['spots_remaining'] - 1
+                        supabase.table('launch_promo').update({'spots_remaining': new_spots}).eq('id', 1).execute()
+                 except Exception as e:
+                    print(f"PROMO ERROR: {e}")
+
+        # CASE B: Subscription Expired (Downgrade to FREE)
+        elif event_name == "subscription_expired":
+             print(f"WEBHOOK: Revoking PRO for {user_email}")
+             
+             # Update to "free"
+             update_data = {"tier": "free"}
+             
+             if user_id:
+                supabase.table("profiles").update(update_data).eq("id", user_id).execute()
+             else:
+                supabase.table("profiles").update(update_data).eq("email", user_email).execute()
+
         return {"status": "success"}
 
     except Exception as e:
         print(f"WEBHOOK EXCEPTION: {e}")
-        return {"error": str(e)}
+        return {"status": "error", "message": str(e)}
