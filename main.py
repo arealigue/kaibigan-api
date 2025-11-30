@@ -205,7 +205,9 @@ def search_assistance(keyword: str = ""):
     results = [p for p in GOV_PROGRAMS_DB if 
                search_term in p["name"].lower() or 
                search_term in p["agency"].lower() or 
-               search_term in p["summary"].lower()]
+               search_term in p["summary"].lower() or
+               search_term in p.get("category", "").lower() or
+               search_term in p.get("who_can_apply", "").lower()]
     return {"programs": results}
 
 
