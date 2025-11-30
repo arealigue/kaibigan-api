@@ -198,17 +198,36 @@ def calculate_loan(request: LoanCalculatorRequest):
         return {"error": str(e)}
 
 @app.get("/search-assistance")
-def search_assistance(keyword: str = ""):
-    if not keyword:
-        return {"programs": GOV_PROGRAMS_DB}
-    search_term = keyword.lower()
-    results = [p for p in GOV_PROGRAMS_DB if 
-               search_term in p["name"].lower() or 
-               search_term in p["agency"].lower() or 
-               search_term in p["summary"].lower() or
-               search_term in p.get("category", "").lower() or
-               search_term in p.get("who_can_apply", "").lower()]
-    return {"programs": results}
+def search_assistance(keyword: str = "", category: str = ""):
+    """
+    Search government assistance programs with optional keyword and category filters.
+    Both filters work as AND condition when provided.
+    """
+    results = GOV_PROGRAMS_DB
+    
+    # Filter by category first (if provided and not "All")
+    if category and category.lower() != "all":
+        results = [p for p in results if p.get("category", "").lower() == category.lower()]
+    
+    # Then filter by keyword (if provided)
+    if keyword:
+        search_term = keyword.lower()
+        results = [p for p in results if 
+                   search_term in p["name"].lower() or 
+                   search_term in p["agency"].lower() or 
+                   search_term in p["summary"].lower() or
+                   search_term in p.get("category", "").lower() or
+                   search_term in p.get("who_can_apply", "").lower()]
+    
+    return {
+        "programs": results,
+        "total_count": len(GOV_PROGRAMS_DB),
+        "filtered_count": len(results),
+        "filters": {
+            "keyword": keyword,
+            "category": category
+        }
+    }
 
 
 # --- 6. PRIVACY CONSENT ENDPOINTS ---
