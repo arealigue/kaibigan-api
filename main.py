@@ -22,10 +22,14 @@ from routers import pera
 load_dotenv()
 client = AsyncOpenAI() 
 
+# Version info
+API_VERSION = "1.0.0"
+BUILD_DATE = "2025-12-17"
+
 app = FastAPI(
     title="Kaibigan API",
     description="The AI backend for KaibiganGPT.",
-    version="0.2.0"
+    version=API_VERSION
 )
 
 # --- 2. MIDDLEWARE (CORS) ---
@@ -165,6 +169,20 @@ class RecipeNotesRequest(BaseModel):
 @app.get("/")
 def read_root():
     return {"status": "Kaibigan API is alive and well!"}
+
+@app.get("/health")
+def health_check():
+    """
+    Health check endpoint for monitoring and load balancing.
+    Used by Render for automatic health checks and restart detection.
+    """
+    return {
+        "status": "healthy",
+        "service": "Kaibigan API",
+        "version": API_VERSION,
+        "build_date": BUILD_DATE,
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
+    }
 
 @app.post("/calculate-loan")
 def calculate_loan(request: LoanCalculatorRequest):
