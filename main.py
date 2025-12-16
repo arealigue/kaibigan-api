@@ -38,7 +38,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000", 
         "https://kaibigan-web.vercel.app",
-        "https://app.kaibigangpt.com"
+        "https://app.kaibigangpt.com",
+        "https://kaibigan-test-five.vercel.app"
     ],
     allow_credentials=True,
     allow_methods=["*"],
