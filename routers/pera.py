@@ -375,11 +375,11 @@ async def create_kaban_transaction(
 
     try:
         # Verify category exists and user has access to it (default or user's custom)
-        category_res = supabase.table('expense_categories').select('id').or_(f'user_id.is.null,user_id.eq.{user_id}').eq('id', request.category_id).execute()
+        category_res = supabase.table('expense_categories').select('id').or_(f'user_id.is.null,user_id.eq.{user_id}').eq('id', transaction_request.category_id).execute()
         if not category_res.data or len(category_res.data) == 0:
             raise HTTPException(status_code=404, detail="Category not found or access denied.")
 
-        tx_data = request.model_dump()
+        tx_data = transaction_request.model_dump()
         tx_data['user_id'] = user_id
         
         # Set transaction_date to today if not provided, and convert to string
