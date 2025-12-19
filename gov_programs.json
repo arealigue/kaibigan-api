@@ -8,11 +8,16 @@
     "who_can_apply": "All SSS members (Employed, Self-Employed, OFW, Voluntary) who have paid at least 3 months of contributions within the 12-month period before the semester of sickness.",
     "amount": "90% of average daily salary credit",
     "how_to_apply": "Submit notification through SSS website/mobile app or nearest SSS branch within 5 days of sickness",
-    "requirements": ["SSS Sickness Notification", "Medical Certificate", "Valid ID"],
+    "requirements": [
+      "SSS Sickness Notification",
+      "Medical Certificate",
+      "Valid ID"
+    ],
     "processing_time": "10-15 working days",
     "contact": "SSS Hotline: 1455",
     "website": "https://www.sss.gov.ph",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "medium"
   },
   {
     "id": "sss_maternity",
@@ -23,11 +28,16 @@
     "who_can_apply": "Female SSS members who have paid at least 3 monthly contributions in the 12-month period before semester of childbirth/miscarriage",
     "amount": "100% of average daily salary credit × 105 days (120 days for solo parents)",
     "how_to_apply": "Submit MAT-1 form to employer or SSS branch",
-    "requirements": ["MAT-1 Notification Form", "Ultrasound Report", "Valid ID"],
+    "requirements": [
+      "MAT-1 Notification Form",
+      "Ultrasound Report",
+      "Valid ID"
+    ],
     "processing_time": "10-15 working days after delivery",
     "contact": "SSS Hotline: 1455",
     "website": "https://www.sss.gov.ph",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "medium"
   },
   {
     "id": "sss_unemployment",
@@ -38,11 +48,16 @@
     "who_can_apply": "SSS members who were involuntarily separated from employment with at least 36 monthly contributions (12 of which within 18 months before separation)",
     "amount": "50% of average monthly salary credit for 2-6 months",
     "how_to_apply": "Apply online via My.SSS portal within 1 year from separation",
-    "requirements": ["Notice of Separation from employer", "Certification of Separation", "Valid ID"],
+    "requirements": [
+      "Notice of Separation from employer",
+      "Certification of Separation",
+      "Valid ID"
+    ],
     "processing_time": "10 working days",
     "contact": "SSS Hotline: 1455",
     "website": "https://www.sss.gov.ph",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "easy"
   },
   {
     "id": "sss_retirement",
@@ -53,11 +68,17 @@
     "who_can_apply": "SSS members aged 60+ (not employed) or 65+ with at least 120 monthly contributions",
     "amount": "₱2,000 minimum monthly pension + dependent's pension",
     "how_to_apply": "File application 6 months before intended retirement date via SSS branch or online",
-    "requirements": ["Retirement Claim Application", "Birth Certificate", "Employment History", "Valid ID"],
+    "requirements": [
+      "Retirement Claim Application",
+      "Birth Certificate",
+      "Employment History",
+      "Valid ID"
+    ],
     "processing_time": "30-45 working days",
     "contact": "SSS Hotline: 1455",
     "website": "https://www.sss.gov.ph",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "complex"
   },
   {
     "id": "pagibig_housing",
@@ -68,11 +89,18 @@
     "who_can_apply": "Active Pag-IBIG members with at least 24 monthly contributions. OFWs can also apply.",
     "amount": "Up to ₱6 million",
     "how_to_apply": "Submit application at any Pag-IBIG branch or through accredited developers",
-    "requirements": ["Application form", "Proof of income", "Certificate of Employment", "Valid IDs", "Property documents"],
+    "requirements": [
+      "Application form",
+      "Proof of income",
+      "Certificate of Employment",
+      "Valid IDs",
+      "Property documents"
+    ],
     "processing_time": "15-30 working days",
     "contact": "Pag-IBIG Hotline: 8724-4244",
     "website": "https://www.pagibigfund.gov.ph",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "complex"
   },
   {
     "id": "pagibig_mp2",
@@ -83,11 +111,16 @@
     "who_can_apply": "All Pag-IBIG members with at least 24 monthly contributions",
     "amount": "Minimum ₱500 per contribution, no maximum",
     "how_to_apply": "Register online via Virtual Pag-IBIG or at any branch",
-    "requirements": ["Pag-IBIG MID Number", "Valid ID", "Initial deposit"],
+    "requirements": [
+      "Pag-IBIG MID Number",
+      "Valid ID",
+      "Initial deposit"
+    ],
     "processing_time": "Same day for registration",
     "contact": "Pag-IBIG Hotline: 8724-4244",
     "website": "https://www.pagibigfund.gov.ph",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "easy"
   },
   {
     "id": "pagibig_calamity",
@@ -98,11 +131,16 @@
     "who_can_apply": "Active members residing or working in calamity-declared areas with at least 24 monthly contributions",
     "amount": "Up to 80% of Total Accumulated Values (TAV)",
     "how_to_apply": "Apply online or at nearest Pag-IBIG branch within 90 days of calamity declaration",
-    "requirements": ["Application form", "Valid ID", "Proof of residence/employment in affected area"],
+    "requirements": [
+      "Application form",
+      "Valid ID",
+      "Proof of residence/employment in affected area"
+    ],
     "processing_time": "3-5 working days",
     "contact": "Pag-IBIG Hotline: 8724-4244",
     "website": "https://www.pagibigfund.gov.ph",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "easy"
   },
   {
     "id": "dswd_aics",
@@ -113,11 +151,17 @@
     "who_can_apply": "Individuals/families who are poor, disadvantaged, or vulnerable and are facing a crisis, as assessed by a social worker.",
     "amount": "Medical: up to ₱50,000; Burial: up to ₱20,000; Education: up to ₱10,000",
     "how_to_apply": "Visit nearest DSWD office or satellite office with requirements",
-    "requirements": ["Valid ID", "Medical Certificate/Death Certificate", "Barangay Certificate", "Hospital bills/quotation"],
+    "requirements": [
+      "Valid ID",
+      "Medical Certificate/Death Certificate",
+      "Barangay Certificate",
+      "Hospital bills/quotation"
+    ],
     "processing_time": "Same day to 3 days depending on assessment",
     "contact": "DSWD Hotline: 8951-7800",
     "website": "https://www.dswd.gov.ph",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "medium"
   },
   {
     "id": "dswd_4ps",
@@ -128,11 +172,15 @@
     "who_can_apply": "Households identified through Listahanan (National Household Targeting System) as poor",
     "amount": "₱750/month per family for health; ₱300-700/month per child for education (max 3 children)",
     "how_to_apply": "Wait for selection through Listahanan survey (no direct application)",
-    "requirements": ["Selected through Listahanan", "Compliance with conditions"],
+    "requirements": [
+      "Selected through Listahanan",
+      "Compliance with conditions"
+    ],
     "processing_time": "Based on Listahanan schedule",
     "contact": "DSWD Hotline: 8951-7800",
     "website": "https://www.dswd.gov.ph",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "complex"
   },
   {
     "id": "dswd_kalahi_cidss",
@@ -143,11 +191,15 @@
     "who_can_apply": "Poor municipalities identified by DSWD",
     "amount": "Varies per project (typically ₱300,000 to ₱1.5 million per barangay project)",
     "how_to_apply": "Through barangay assembly participation",
-    "requirements": ["Community participation", "Project proposal"],
+    "requirements": [
+      "Community participation",
+      "Project proposal"
+    ],
     "processing_time": "6-12 months project cycle",
     "contact": "DSWD Hotline: 8951-7800",
     "website": "https://www.dswd.gov.ph",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "complex"
   },
   {
     "id": "dswd_sustainable_livelihood",
@@ -158,11 +210,16 @@
     "who_can_apply": "4Ps beneficiaries and Listahanan-identified poor families",
     "amount": "Seed capital fund: ₱15,000 per individual or ₱20,000 per family",
     "how_to_apply": "Through DSWD field offices",
-    "requirements": ["Business plan", "Skills training completion", "Valid ID"],
+    "requirements": [
+      "Business plan",
+      "Skills training completion",
+      "Valid ID"
+    ],
     "processing_time": "2-3 months including training",
     "contact": "DSWD Hotline: 8951-7800",
     "website": "https://www.dswd.gov.ph",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "complex"
   },
   {
     "id": "owwa_education",
@@ -173,11 +230,17 @@
     "who_can_apply": "Qualified dependents of active OWWA members who passed the qualifying exam.",
     "amount": "₱60,000 per year for 4-5 year course",
     "how_to_apply": "Apply online through OWWA website during application period (usually March-May)",
-    "requirements": ["OWWA membership proof", "Scholastic records", "Enrollment certificate", "Valid IDs"],
+    "requirements": [
+      "OWWA membership proof",
+      "Scholastic records",
+      "Enrollment certificate",
+      "Valid IDs"
+    ],
     "processing_time": "2-3 months after application deadline",
     "contact": "OWWA Hotline: 1348",
     "website": "https://www.owwa.gov.ph",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "complex"
   },
   {
     "id": "owwa_ofw_enterprise",
@@ -188,11 +251,16 @@
     "who_can_apply": "Active OWWA members and their qualified dependents",
     "amount": "Training + starter kit worth ₱20,000-50,000",
     "how_to_apply": "Register at OWWA regional offices",
-    "requirements": ["OWWA membership", "Business plan", "Training completion"],
+    "requirements": [
+      "OWWA membership",
+      "Business plan",
+      "Training completion"
+    ],
     "processing_time": "1-2 months including training",
     "contact": "OWWA Hotline: 1348",
     "website": "https://www.owwa.gov.ph",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "complex"
   },
   {
     "id": "owwa_repatriation",
@@ -203,11 +271,16 @@
     "who_can_apply": "Distressed OFWs who are OWWA members",
     "amount": "Full coverage of repatriation costs",
     "how_to_apply": "Contact nearest Philippine Embassy/Consulate or OWWA 24/7 Operations Center",
-    "requirements": ["Proof of distress", "OWWA membership", "Valid travel documents"],
+    "requirements": [
+      "Proof of distress",
+      "OWWA membership",
+      "Valid travel documents"
+    ],
     "processing_time": "24-72 hours for emergency cases",
     "contact": "OWWA 24/7 Hotline: +63 908 865 2286",
     "website": "https://www.owwa.gov.ph",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "medium"
   },
   {
     "id": "philhealth_konsulta",
@@ -218,11 +291,15 @@
     "who_can_apply": "All PhilHealth members and their qualified dependents",
     "amount": "Free consultations and selected medicines",
     "how_to_apply": "Register at Konsulta provider facility with PhilHealth ID",
-    "requirements": ["PhilHealth ID/MDR", "Valid ID"],
+    "requirements": [
+      "PhilHealth ID/MDR",
+      "Valid ID"
+    ],
     "processing_time": "Same day registration",
     "contact": "PhilHealth Hotline: 8441-7442",
     "website": "https://www.philhealth.gov.ph",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "easy"
   },
   {
     "id": "philhealth_case_rates",
@@ -233,11 +310,15 @@
     "who_can_apply": "Active PhilHealth members with qualifying contributions",
     "amount": "Varies (e.g., Pneumonia: ~₱29k; Stroke: ~₱57k - rates increased by 50%)",
     "how_to_apply": "Automatic deduction at accredited hospitals",
-    "requirements": ["PhilHealth ID/MDR", "Signed Claim Form 1"],
+    "requirements": [
+      "PhilHealth ID/MDR",
+      "Signed Claim Form 1"
+    ],
     "processing_time": "Real-time at billing",
     "contact": "PhilHealth Hotline: (02) 8441-7442",
     "website": "https://www.philhealth.gov.ph",
-    "last_updated": "2025-12-04"
+    "last_updated": "2025-12-04",
+    "difficulty": "medium"
   },
   {
     "id": "philhealth_z_benefit",
@@ -248,11 +329,16 @@
     "who_can_apply": "PhilHealth members diagnosed with covered conditions",
     "amount": "Up to ₱1.4M for breast cancer; up to ₱2.6M for kidney transplant",
     "how_to_apply": "Through accredited Z Benefit providers",
-    "requirements": ["Medical certificate", "PhilHealth ID", "Diagnostic results"],
+    "requirements": [
+      "Medical certificate",
+      "PhilHealth ID",
+      "Diagnostic results"
+    ],
     "processing_time": "5-10 working days for approval",
     "contact": "PhilHealth Hotline: 8441-7442",
     "website": "https://www.philhealth.gov.ph",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "medium"
   },
   {
     "id": "dole_tupad",
@@ -263,11 +349,16 @@
     "who_can_apply": "Displaced workers, underemployed, unemployed (priority: 4Ps beneficiaries)",
     "amount": "Minimum wage rate for 10-30 days work",
     "how_to_apply": "Register at barangay or DOLE field office",
-    "requirements": ["Barangay Certificate", "Valid ID", "Certificate of No Employment"],
+    "requirements": [
+      "Barangay Certificate",
+      "Valid ID",
+      "Certificate of No Employment"
+    ],
     "processing_time": "1-2 weeks",
     "contact": "DOLE Hotline: 1349",
     "website": "https://www.dole.gov.ph",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "medium"
   },
   {
     "id": "dole_spes",
@@ -278,11 +369,16 @@
     "who_can_apply": "Students 15-25 years old from poor families",
     "amount": "60% of salary from DOLE, 40% from employer",
     "how_to_apply": "Apply at PESO office during enrollment period (January-March)",
-    "requirements": ["Certificate of Enrollment", "Birth Certificate", "Parent's Income Tax Return/Certificate of Indigency"],
+    "requirements": [
+      "Certificate of Enrollment",
+      "Birth Certificate",
+      "Parent's Income Tax Return/Certificate of Indigency"
+    ],
     "processing_time": "2-4 weeks",
     "contact": "DOLE Hotline: 1349",
     "website": "https://www.dole.gov.ph",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "medium"
   },
   {
     "id": "dole_adjustment_measures",
@@ -293,11 +389,16 @@
     "who_can_apply": "Workers affected by permanent closure or retrenchment",
     "amount": "₱5,000 one-time financial assistance",
     "how_to_apply": "Through employer's notice to DOLE or direct application",
-    "requirements": ["Notice of displacement", "Employment certificate", "Valid ID"],
+    "requirements": [
+      "Notice of displacement",
+      "Employment certificate",
+      "Valid ID"
+    ],
     "processing_time": "30-45 days",
     "contact": "DOLE Hotline: 1349",
     "website": "https://www.dole.gov.ph",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "medium"
   },
   {
     "id": "tesda_scholarship",
@@ -308,11 +409,17 @@
     "who_can_apply": "Filipino citizens 15+ years old, HS graduate preferred",
     "amount": "Free training + toolkit + certification",
     "how_to_apply": "Apply at TESDA centers or accredited training institutions",
-    "requirements": ["Birth Certificate", "HS Diploma", "Valid ID", "Medical Certificate"],
+    "requirements": [
+      "Birth Certificate",
+      "HS Diploma",
+      "Valid ID",
+      "Medical Certificate"
+    ],
     "processing_time": "1-2 weeks for enrollment",
     "contact": "TESDA Hotline: 8887-7777",
     "website": "https://www.tesda.gov.ph",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "medium"
   },
   {
     "id": "tesda_step",
@@ -323,11 +430,16 @@
     "who_can_apply": "Unemployed/underemployed Filipinos 18+ years old",
     "amount": "Free training + job placement assistance",
     "how_to_apply": "Register at TESDA or LGU offices",
-    "requirements": ["Valid ID", "Barangay Certificate", "Bio-data"],
+    "requirements": [
+      "Valid ID",
+      "Barangay Certificate",
+      "Bio-data"
+    ],
     "processing_time": "Training starts within 1 month",
     "contact": "TESDA Hotline: 8887-7777",
     "website": "https://www.tesda.gov.ph",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "complex"
   },
   {
     "id": "ched_unifast",
@@ -338,11 +450,15 @@
     "who_can_apply": "Filipino students enrolled in undergraduate programs in SUCs/LUCs",
     "amount": "Full tuition and miscellaneous fees",
     "how_to_apply": "Automatic for qualified students in participating schools",
-    "requirements": ["Certificate of enrollment", "Valid ID"],
+    "requirements": [
+      "Certificate of enrollment",
+      "Valid ID"
+    ],
     "processing_time": "Automatic upon enrollment",
     "contact": "UniFAST Hotline: 8441-0498",
     "website": "https://unifast.gov.ph",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "medium"
   },
   {
     "id": "ched_tes",
@@ -353,11 +469,16 @@
     "who_can_apply": "Poor Filipino students enrolled in CHED-recognized programs",
     "amount": "₱40,000 per academic year",
     "how_to_apply": "Apply through school's registrar during enrollment",
-    "requirements": ["Proof of income", "Certificate of enrollment", "Grades"],
+    "requirements": [
+      "Proof of income",
+      "Certificate of enrollment",
+      "Grades"
+    ],
     "processing_time": "2-4 weeks after application",
     "contact": "UniFAST Hotline: 8441-0498",
     "website": "https://unifast.gov.ph",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "medium"
   },
   {
     "id": "landbank_katuwang",
@@ -368,11 +489,17 @@
     "who_can_apply": "Farmers, fisherfolk, MSMEs with viable projects",
     "amount": "₱50,000 to ₱15 million depending on project",
     "how_to_apply": "Apply at any LANDBANK branch",
-    "requirements": ["Business plan", "Collateral", "Financial statements", "Valid IDs"],
+    "requirements": [
+      "Business plan",
+      "Collateral",
+      "Financial statements",
+      "Valid IDs"
+    ],
     "processing_time": "15-30 working days",
     "contact": "LANDBANK: 8405-7000",
     "website": "https://www.landbank.com",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "medium"
   },
   {
     "id": "da_rice_farmer",
@@ -383,11 +510,15 @@
     "who_can_apply": "Rice farmers cultivating 2 hectares or less, registered in RSBSA",
     "amount": "₱7,000 per farmer (Updated 2025 rate)",
     "how_to_apply": "Automatic for RSBSA-registered farmers (via intervention monitoring card)",
-    "requirements": ["RSBSA registration", "Valid ID/IMC Card"],
+    "requirements": [
+      "RSBSA registration",
+      "Valid ID/IMC Card"
+    ],
     "processing_time": "Based on DA schedule",
     "contact": "DA Hotline: (02) 8928-8741",
     "website": "https://www.da.gov.ph",
-    "last_updated": "2025-12-04"
+    "last_updated": "2025-12-04",
+    "difficulty": "medium"
   },
   {
     "id": "dti_pondo_sa_pagbabago",
@@ -398,11 +529,16 @@
     "who_can_apply": "Micro-enterprises not qualified for bank loans",
     "amount": "₱30,000 to ₱100,000",
     "how_to_apply": "Apply through partner microfinance institutions",
-    "requirements": ["Business registration", "Business plan", "Valid IDs"],
+    "requirements": [
+      "Business registration",
+      "Business plan",
+      "Valid IDs"
+    ],
     "processing_time": "5-10 working days",
     "contact": "DTI Hotline: 751-5096",
     "website": "https://www.dti.gov.ph",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "medium"
   },
   {
     "id": "dti_negosyo_center",
@@ -413,11 +549,15 @@
     "who_can_apply": "All aspiring and existing entrepreneurs",
     "amount": "Free services",
     "how_to_apply": "Visit nearest Negosyo Center",
-    "requirements": ["Valid ID", "Business documents if existing"],
+    "requirements": [
+      "Valid ID",
+      "Business documents if existing"
+    ],
     "processing_time": "Same day for basic services",
     "contact": "DTI Hotline: 751-5096",
     "website": "https://www.dti.gov.ph",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "medium"
   },
   {
     "id": "pcso_medical",
@@ -428,11 +568,17 @@
     "who_can_apply": "Indigent Filipino patients (or their representatives)",
     "amount": "Varies by case (typically ₱10,000 to ₱50,000; higher for catastrophic cases)",
     "how_to_apply": "NCR: Online via PCSO E-Services; Provincial: Visit nearest PCSO Branch Office or Malasakit Center",
-    "requirements": ["Medical Abstract", "Hospital Bill/Quotation", "Barangay Indigency", "Valid IDs (Patient & Rep)"],
+    "requirements": [
+      "Medical Abstract",
+      "Hospital Bill/Quotation",
+      "Barangay Indigency",
+      "Valid IDs (Patient & Rep)"
+    ],
     "processing_time": "1-3 days (NCR Online); Same day (Malasakit Centers)",
     "contact": "PCSO Charity Dept: (02) 8426-3475 / (02) 8366-3328",
     "website": "https://www.pcso.gov.ph",
-    "last_updated": "2025-12-03"
+    "last_updated": "2025-12-03",
+    "difficulty": "medium"
   },
   {
     "id": "osca_senior_discount",
@@ -443,11 +589,16 @@
     "who_can_apply": "Filipino citizens aged 60 and above",
     "amount": "20% discount + VAT exemption",
     "how_to_apply": "Register at barangay/OSCA office for Senior Citizen ID",
-    "requirements": ["Birth Certificate", "Valid ID", "1x1 photo"],
+    "requirements": [
+      "Birth Certificate",
+      "Valid ID",
+      "1x1 photo"
+    ],
     "processing_time": "Same day to 1 week",
     "contact": "Local OSCA office",
     "website": "Varies per LGU",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "medium"
   },
   {
     "id": "osca_social_pension",
@@ -458,11 +609,16 @@
     "who_can_apply": "Indigent senior citizens 60+ without pension",
     "amount": "₱1,000 per month (₱2,000 for 80+ years old)",
     "how_to_apply": "Apply at OSCA/DSWD office",
-    "requirements": ["Senior Citizen ID", "Certificate of Indigency", "Certification of no pension"],
+    "requirements": [
+      "Senior Citizen ID",
+      "Certificate of Indigency",
+      "Certification of no pension"
+    ],
     "processing_time": "1-3 months",
     "contact": "DSWD Hotline: 8951-7800",
     "website": "https://www.dswd.gov.ph",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "complex"
   },
   {
     "id": "pwd_benefits",
@@ -473,11 +629,17 @@
     "who_can_apply": "Persons with disabilities certified by DOH",
     "amount": "20% discount + VAT exemption",
     "how_to_apply": "Register at PDAO office for PWD ID",
-    "requirements": ["Medical Certificate", "Barangay Certificate", "Valid ID", "1x1 photo"],
+    "requirements": [
+      "Medical Certificate",
+      "Barangay Certificate",
+      "Valid ID",
+      "1x1 photo"
+    ],
     "processing_time": "1-2 weeks",
     "contact": "Local PDAO office",
     "website": "Varies per LGU",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "medium"
   },
   {
     "id": "nha_housing",
@@ -488,11 +650,16 @@
     "who_can_apply": "ISFs, disaster victims, families affected by government projects",
     "amount": "Subsidized housing units",
     "how_to_apply": "Through LGU endorsement or NHA regional offices",
-    "requirements": ["Proof of residency", "Income documents", "Valid IDs"],
+    "requirements": [
+      "Proof of residency",
+      "Income documents",
+      "Valid IDs"
+    ],
     "processing_time": "6-12 months",
     "contact": "NHA: 8790-0800",
     "website": "https://www.nha.gov.ph",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "complex"
   },
   {
     "id": "doh_malasakit",
@@ -503,11 +670,16 @@
     "who_can_apply": "Indigent and financially-incapacitated patients",
     "amount": "Combined assistance from various agencies",
     "how_to_apply": "Visit Malasakit Center in DOH hospitals",
-    "requirements": ["Hospital bills", "Medical certificate", "Valid ID"],
+    "requirements": [
+      "Hospital bills",
+      "Medical certificate",
+      "Valid ID"
+    ],
     "processing_time": "Same day",
     "contact": "DOH Hotline: 8651-7800",
     "website": "https://www.doh.gov.ph",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "medium"
   },
   {
     "id": "deped_voucher",
@@ -518,11 +690,16 @@
     "who_can_apply": "JHS completers from public schools enrolling in private SHS",
     "amount": "₱22,500 per school year",
     "how_to_apply": "Apply during enrollment at participating private schools",
-    "requirements": ["JHS Certificate", "Report Card", "Valid ID"],
+    "requirements": [
+      "JHS Certificate",
+      "Report Card",
+      "Valid ID"
+    ],
     "processing_time": "Upon enrollment",
     "contact": "DepEd Hotline: 8636-1663",
     "website": "https://www.deped.gov.ph",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "medium"
   },
   {
     "id": "ltfrb_service_contracting",
@@ -533,11 +710,16 @@
     "who_can_apply": "Registered PUV drivers/operators in modernization program",
     "amount": "₱10,000 per month",
     "how_to_apply": "Register through transport cooperative or LTFRB",
-    "requirements": ["Driver's license", "Franchise", "Cooperative membership"],
+    "requirements": [
+      "Driver's license",
+      "Franchise",
+      "Cooperative membership"
+    ],
     "processing_time": "15-30 days",
     "contact": "LTFRB: 8426-2515",
     "website": "https://www.ltfrb.gov.ph",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "medium"
   },
   {
     "id": "sss_disability",
@@ -548,11 +730,17 @@
     "who_can_apply": "SSS members with at least 36 monthly contributions (12 within the semester before disability) who are permanently disabled",
     "amount": "Monthly pension (if 36+ contributions) or lump sum (if less than 36 contributions)",
     "how_to_apply": "File disability claim at nearest SSS branch with medical evaluation",
-    "requirements": ["Disability Claim Application", "Medical Certificate from SSS-accredited physician", "Birth Certificate", "Valid ID"],
+    "requirements": [
+      "Disability Claim Application",
+      "Medical Certificate from SSS-accredited physician",
+      "Birth Certificate",
+      "Valid ID"
+    ],
     "processing_time": "30-45 working days",
     "contact": "SSS Hotline: 1455",
     "website": "https://www.sss.gov.ph",
-    "last_updated": "2025-11-30"
+    "last_updated": "2025-11-30",
+    "difficulty": "complex"
   },
   {
     "id": "sss_death_funeral",
@@ -563,11 +751,17 @@
     "who_can_apply": "Primary beneficiaries (spouse, dependent children) or secondary beneficiaries of deceased SSS members",
     "amount": "Funeral: ₱20,000 to ₱60,000 (based on contributions); Pension: Minimum ₱2,000/month",
     "how_to_apply": "File death claim at nearest SSS branch or online via My.SSS",
-    "requirements": ["Death Claim Application", "Death Certificate", "Marriage/Birth Certificates", "Valid ID"],
+    "requirements": [
+      "Death Claim Application",
+      "Death Certificate",
+      "Marriage/Birth Certificates",
+      "Valid ID"
+    ],
     "processing_time": "30-45 working days",
     "contact": "SSS Hotline: 1455",
     "website": "https://www.sss.gov.ph",
-    "last_updated": "2025-12-04"
+    "last_updated": "2025-12-04",
+    "difficulty": "medium"
   },
   {
     "id": "pagibig_mpl",
@@ -578,11 +772,16 @@
     "who_can_apply": "Active Pag-IBIG members with at least 24 monthly contributions",
     "amount": "Up to 80% of Total Accumulated Value (TAV), maximum ₱600,000",
     "how_to_apply": "Apply online via Virtual Pag-IBIG or at any branch",
-    "requirements": ["Loan Application Form", "Valid IDs (2)", "Proof of income"],
+    "requirements": [
+      "Loan Application Form",
+      "Valid IDs (2)",
+      "Proof of income"
+    ],
     "processing_time": "3-5 working days",
     "contact": "Pag-IBIG Hotline: 8724-4244",
     "website": "https://www.pagibigfund.gov.ph",
-    "last_updated": "2025-11-30"
+    "last_updated": "2025-11-30",
+    "difficulty": "easy"
   },
   {
     "id": "solo_parent_benefits",
@@ -593,11 +792,18 @@
     "who_can_apply": "Solo parents (widowed, separated, single, abandoned) with children under 18 or with disability",
     "amount": "7-day parental leave; discounts on government transactions; priority in livelihood programs",
     "how_to_apply": "Register at local DSWD or Social Welfare office for Solo Parent ID",
-    "requirements": ["Solo Parent ID Application", "Birth Certificate of child/ren", "Proof of solo parent status", "Barangay Certificate", "Valid ID"],
+    "requirements": [
+      "Solo Parent ID Application",
+      "Birth Certificate of child/ren",
+      "Proof of solo parent status",
+      "Barangay Certificate",
+      "Valid ID"
+    ],
     "processing_time": "1-2 weeks for ID issuance",
     "contact": "DSWD Hotline: 8951-7800",
     "website": "https://www.dswd.gov.ph",
-    "last_updated": "2025-11-30"
+    "last_updated": "2025-11-30",
+    "difficulty": "medium"
   },
   {
     "id": "gsis_retirement",
@@ -608,11 +814,17 @@
     "who_can_apply": "Government employees (national/local) with at least 15 years of service, aged 60-65",
     "amount": "Based on years of service and average monthly compensation (minimum ₱5,000/month)",
     "how_to_apply": "File application through agency HR or directly at GSIS office 6 months before retirement",
-    "requirements": ["Retirement Application", "Service Record", "Birth Certificate", "Valid IDs"],
+    "requirements": [
+      "Retirement Application",
+      "Service Record",
+      "Birth Certificate",
+      "Valid IDs"
+    ],
     "processing_time": "30-60 working days",
     "contact": "GSIS Hotline: 8847-4747",
     "website": "https://www.gsis.gov.ph",
-    "last_updated": "2025-11-30"
+    "last_updated": "2025-11-30",
+    "difficulty": "complex"
   },
   {
     "id": "gsis_ecard_loan",
@@ -623,11 +835,15 @@
     "who_can_apply": "Active GSIS members with at least 3 months of service and contributions",
     "amount": "1 month salary, maximum ₱40,000",
     "how_to_apply": "Apply online via GSIS website or mobile app",
-    "requirements": ["GSIS eCard", "Active membership status"],
+    "requirements": [
+      "GSIS eCard",
+      "Active membership status"
+    ],
     "processing_time": "Same day to 3 working days",
     "contact": "GSIS Hotline: 8847-4747",
     "website": "https://www.gsis.gov.ph",
-    "last_updated": "2025-11-30"
+    "last_updated": "2025-11-30",
+    "difficulty": "easy"
   },
   {
     "id": "dict_free_wifi",
@@ -638,11 +854,14 @@
     "who_can_apply": "All Filipinos (public access)",
     "amount": "Free internet access",
     "how_to_apply": "Connect to @FreeWiFi@Gov networks in public areas",
-    "requirements": ["Mobile device with WiFi capability"],
+    "requirements": [
+      "Mobile device with WiFi capability"
+    ],
     "processing_time": "Immediate",
     "contact": "DICT: 8920-0101",
     "website": "https://dict.gov.ph",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "medium"
   },
   {
     "id": "dfa_passport_assistance",
@@ -653,11 +872,16 @@
     "who_can_apply": "Documented OFWs with employment contracts",
     "amount": "Regular passport fee (₱1,200)",
     "how_to_apply": "Online appointment with OFW lane selection",
-    "requirements": ["Employment contract", "Old passport", "NSO Birth Certificate"],
+    "requirements": [
+      "Employment contract",
+      "Old passport",
+      "NSO Birth Certificate"
+    ],
     "processing_time": "7 working days",
     "contact": "DFA Hotline: 8234-3488",
     "website": "https://passport.gov.ph",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "easy"
   },
   {
     "id": "mmda_blue_card",
@@ -668,11 +892,16 @@
     "who_can_apply": "PWDs and senior citizens with vehicles",
     "amount": "Free designated parking",
     "how_to_apply": "Apply at MMDA or LGU offices",
-    "requirements": ["PWD/Senior ID", "Vehicle registration", "Driver's license"],
+    "requirements": [
+      "PWD/Senior ID",
+      "Vehicle registration",
+      "Driver's license"
+    ],
     "processing_time": "1-2 weeks",
     "contact": "MMDA Hotline: 136",
     "website": "https://www.mmda.gov.ph",
-    "last_updated": "2025-11-29"
+    "last_updated": "2025-11-29",
+    "difficulty": "medium"
   },
   {
     "id": "dswd_food_stamp",
@@ -683,11 +912,15 @@
     "who_can_apply": "Households classified as 'food poor' by DSWD Listahanan (income <₱8,000/mo)",
     "amount": "₱3,000 monthly food credits",
     "how_to_apply": "Wait for Listahanan assessment and DSWD validation (Pilot areas: NCR, CARAGA, BARMM, etc.)",
-    "requirements": ["Listahanan Registration", "Attendance in Nutrition Education Sessions"],
+    "requirements": [
+      "Listahanan Registration",
+      "Attendance in Nutrition Education Sessions"
+    ],
     "processing_time": "Based on DSWD rollout schedule",
     "contact": "DSWD Hotline: (02) 8931-8101",
     "website": "https://www.dswd.gov.ph",
-    "last_updated": "2025-12-04"
+    "last_updated": "2025-12-04",
+    "difficulty": "medium"
   },
   {
     "id": "philhealth_mental_health",
@@ -698,11 +931,15 @@
     "who_can_apply": "All active PhilHealth members and dependents",
     "amount": "Varies (General outpatient package: ~₱9,000/year coverage)",
     "how_to_apply": "Consult at accredited Mental Health Outpatient providers",
-    "requirements": ["PhilHealth ID", "Referral from primary care provider"],
+    "requirements": [
+      "PhilHealth ID",
+      "Referral from primary care provider"
+    ],
     "processing_time": "Real-time at facility",
     "contact": "PhilHealth Hotline: (02) 8441-7442",
     "website": "https://www.philhealth.gov.ph",
-    "last_updated": "2025-12-04"
+    "last_updated": "2025-12-04",
+    "difficulty": "medium"
   },
   {
     "id": "ncsc_milestone_gifts",
@@ -713,11 +950,16 @@
     "who_can_apply": "Filipino citizens reaching the ages of 80, 85, 90, and 95 (living in PH or abroad)",
     "amount": "₱10,000 for every milestone age (80, 85, 90, 95)",
     "how_to_apply": "Register with OSCA or online via National Commission of Senior Citizens (NCSC) website",
-    "requirements": ["Senior Citizen ID", "Birth Certificate", "NCSC Registration"],
+    "requirements": [
+      "Senior Citizen ID",
+      "Birth Certificate",
+      "NCSC Registration"
+    ],
     "processing_time": "Varies by LGU payout schedule",
     "contact": "NCSC Hotline: (02) 8631-0975",
     "website": "https://www.ncsc.gov.ph",
-    "last_updated": "2025-12-05"
+    "last_updated": "2025-12-05",
+    "difficulty": "easy"
   },
   {
     "id": "pagibig_4ph_expanded",
@@ -728,11 +970,16 @@
     "who_can_apply": "Low-income Pag-IBIG members and OFWs purchasing 4PH-accredited units",
     "amount": "Loan up to ₱1.8M (condo/house) at 3% to 4.5% interest rate (subsidized)",
     "how_to_apply": "Apply through accredited 4PH developers or Pag-IBIG branches",
-    "requirements": ["Pag-IBIG Membership", "Proof of Income", "Application Form"],
+    "requirements": [
+      "Pag-IBIG Membership",
+      "Proof of Income",
+      "Application Form"
+    ],
     "processing_time": "15-20 working days",
     "contact": "Pag-IBIG Hotline: 8724-4244",
     "website": "https://www.pagibigfund.gov.ph",
-    "last_updated": "2025-12-05"
+    "last_updated": "2025-12-05",
+    "difficulty": "medium"
   },
   {
     "id": "dswd_tara_basa",
@@ -743,11 +990,15 @@
     "who_can_apply": "College students (as Tutors/Youth Dev Workers) and Parents of struggling elementary readers",
     "amount": "Tutors: Minimum wage equivalent; Parents: ~₱235 per session attended",
     "how_to_apply": "Check with local SUCs (for students) or DSWD Field Office (for parents)",
-    "requirements": ["School Registration (for tutors)", "Listahanan/4Ps ID (for parents)"],
+    "requirements": [
+      "School Registration (for tutors)",
+      "Listahanan/4Ps ID (for parents)"
+    ],
     "processing_time": "Based on program cycle",
     "contact": "DSWD Hotline: (02) 8931-8101",
     "website": "https://www.dswd.gov.ph",
-    "last_updated": "2025-12-05"
+    "last_updated": "2025-12-05",
+    "difficulty": "medium"
   },
   {
     "id": "dmw_aksyon_fund",
@@ -758,11 +1009,15 @@
     "who_can_apply": "Distressed OFWs (documented or undocumented) and their families",
     "amount": "Financial Aid: ₱5,000 to ₱50,000 (depending on case severity)",
     "how_to_apply": "Request assistance via DMW website, Hotline 1348, or Migrant Workers Offices (MWO)",
-    "requirements": ["Passport/Travel Document", "Proof of distress/displacement"],
+    "requirements": [
+      "Passport/Travel Document",
+      "Proof of distress/displacement"
+    ],
     "processing_time": "3-5 working days",
     "contact": "DMW Hotline: 1348",
     "website": "https://www.dmw.gov.ph",
-    "last_updated": "2025-12-05"
+    "last_updated": "2025-12-05",
+    "difficulty": "medium"
   },
   {
     "id": "dmw_ofw_pass",
@@ -773,11 +1028,16 @@
     "who_can_apply": "All OFWs (Balik-Manggagawa and New Hires)",
     "amount": "Free (Replaces the ₱100 OEC fee)",
     "how_to_apply": "Download and register via the DMW Mobile App",
-    "requirements": ["Verified Employment Contract", "Passport", "Visa"],
+    "requirements": [
+      "Verified Employment Contract",
+      "Passport",
+      "Visa"
+    ],
     "processing_time": "Instant (Digital generation)",
     "contact": "DMW Hotline: 1348",
     "website": "https://www.dmw.gov.ph",
-    "last_updated": "2025-12-05"
+    "last_updated": "2025-12-05",
+    "difficulty": "medium"
   },
   {
     "id": "dbm_medical_allowance",
@@ -788,10 +1048,13 @@
     "who_can_apply": "Qualified civilian government employees (National & Local)",
     "amount": "₱7,000 per annum",
     "how_to_apply": "Automatic grant through agency HR/Payroll",
-    "requirements": ["Active service record"],
+    "requirements": [
+      "Active service record"
+    ],
     "processing_time": "Disbursed annually (usually Q1 or Q2)",
     "contact": "Agency HR / DBM",
     "website": "https://www.dbm.gov.ph",
-    "last_updated": "2025-12-05"
+    "last_updated": "2025-12-05",
+    "difficulty": "medium"
   }
 ]
