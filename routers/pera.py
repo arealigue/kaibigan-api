@@ -995,6 +995,12 @@ async def create_recurring_rule(
         if not category_res.data:
             raise HTTPException(status_code=404, detail="Category not found")
         
+        # Check for duplicate rule (same amount, description, category, frequency, schedule_day)
+        existing_res = supabase.table('recurring_rules').select('id').eq('user_id', user_id).eq('amount', recurring_request.amount).eq('category_id', recurring_request.category_id).eq('frequency', recurring_request.frequency).eq('schedule_day', recurring_request.schedule_day).eq('is_active', True).execute()
+        
+        if existing_res.data and len(existing_res.data) > 0:
+            raise HTTPException(status_code=400, detail="A similar recurring rule already exists. Delete the existing rule first or use different settings.")
+        
         rule_data = recurring_request.model_dump()
         rule_data['user_id'] = user_id
         
