@@ -98,6 +98,24 @@ class AIFinancialChatRequest(BaseModel):
     chat_history: Optional[List[ChatMessage]] = []
 
 
+# --- RECURRING INCOME MODELS ---
+
+class RecurringRuleCreate(BaseModel):
+    amount: float
+    description: Optional[str] = None
+    category_id: str
+    transaction_type: str = "income"  # "income" or "expense"
+    frequency: str  # "monthly", "bimonthly", "weekly"
+    schedule_day: int  # Day of month (1-31) or day of week (0-6)
+
+class RecurringRuleUpdate(BaseModel):
+    amount: Optional[float] = None
+    description: Optional[str] = None
+    category_id: Optional[str] = None
+    frequency: Optional[str] = None
+    schedule_day: Optional[int] = None
+    is_active: Optional[bool] = None
+
 # --- IPON TRACKER ENDPOINTS ---
 
 @router.post("/ipon/goals")
@@ -415,6 +433,9 @@ async def get_kaban_transactions(
     # No tier check - all authenticated users can view their transactions
 
     try:
+        # LAZY EVALUATION: Process any pending recurring transactions first
+        await process_pending_recurring_transactions(user_id)
+        
         query = supabase.table('kaban_transactions').select('*, expense_categories(name, emoji)').eq('user_id', user_id)
         
         # Apply filters
@@ -818,4 +839,248 @@ Keep responses conversational and around 150-250 words unless they ask for detai
     
     except Exception as e:
         print(f"AI Financial Chat Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- RECURRING INCOME ENDPOINTS ---
+
+def get_scheduled_dates_for_rule(rule: dict, check_month: int, check_year: int) -> List[datetime.date]:
+    """
+    Calculate which dates should have transactions for a given rule and month.
+    Returns list of dates that are scheduled for that month.
+    """
+    dates = []
+    frequency = rule['frequency']
+    schedule_day = rule['schedule_day']
+    
+    if frequency == 'monthly':
+        # Single day per month
+        try:
+            # Handle months with fewer days (e.g., Feb 30 -> Feb 28)
+            last_day = (datetime.date(check_year, check_month + 1, 1) - datetime.timedelta(days=1)).day if check_month < 12 else 31
+            actual_day = min(schedule_day, last_day)
+            dates.append(datetime.date(check_year, check_month, actual_day))
+        except ValueError:
+            pass
+            
+    elif frequency == 'bimonthly':
+        # Two days per month: schedule_day and schedule_day + 15
+        try:
+            last_day = (datetime.date(check_year, check_month + 1, 1) - datetime.timedelta(days=1)).day if check_month < 12 else 31
+            
+            # First payday
+            first_day = min(schedule_day, last_day)
+            dates.append(datetime.date(check_year, check_month, first_day))
+            
+            # Second payday (15 days later, or end of month)
+            second_day = min(schedule_day + 15, last_day)
+            if second_day != first_day:
+                dates.append(datetime.date(check_year, check_month, second_day))
+        except ValueError:
+            pass
+            
+    elif frequency == 'weekly':
+        # Every week on the specified day (0=Monday, 6=Sunday)
+        first_of_month = datetime.date(check_year, check_month, 1)
+        last_day = (datetime.date(check_year, check_month + 1, 1) - datetime.timedelta(days=1)).day if check_month < 12 else 31
+        
+        # Find first occurrence of the weekday in the month
+        days_until_target = (schedule_day - first_of_month.weekday()) % 7
+        current = first_of_month + datetime.timedelta(days=days_until_target)
+        
+        while current.month == check_month:
+            dates.append(current)
+            current += datetime.timedelta(days=7)
+    
+    return dates
+
+
+async def process_pending_recurring_transactions(user_id: str):
+    """
+    Lazy evaluation: Check for pending recurring transactions and insert them.
+    Called when user fetches transactions.
+    """
+    today = datetime.date.today()
+    
+    try:
+        # Get all active recurring rules for this user
+        rules_res = supabase.table('recurring_rules').select('*').eq('user_id', user_id).eq('is_active', True).execute()
+        
+        if not rules_res.data:
+            return  # No rules, nothing to do
+        
+        for rule in rules_res.data:
+            rule_id = rule['id']
+            last_posted = datetime.date.fromisoformat(rule['last_posted_date']) if rule.get('last_posted_date') else None
+            rule_created = datetime.datetime.fromisoformat(rule['created_at'].replace('Z', '+00:00')).date()
+            
+            # Check current month and previous month (for users who open after month end)
+            months_to_check = [
+                (today.year, today.month),
+            ]
+            # Add previous month
+            if today.month == 1:
+                months_to_check.append((today.year - 1, 12))
+            else:
+                months_to_check.append((today.year, today.month - 1))
+            
+            for check_year, check_month in months_to_check:
+                scheduled_dates = get_scheduled_dates_for_rule(rule, check_month, check_year)
+                
+                for scheduled_date in scheduled_dates:
+                    # Skip if:
+                    # 1. Date is in the future
+                    # 2. Date is before rule was created
+                    # 3. Date was already posted (check last_posted_date or existing transaction)
+                    if scheduled_date > today:
+                        continue
+                    if scheduled_date < rule_created:
+                        continue
+                    if last_posted and scheduled_date <= last_posted:
+                        continue
+                    
+                    # Check if transaction already exists for this rule and date (idempotency)
+                    existing_res = supabase.table('kaban_transactions').select('id').eq('user_id', user_id).eq('recurring_rule_id', rule_id).eq('transaction_date', str(scheduled_date)).execute()
+                    
+                    if existing_res.data and len(existing_res.data) > 0:
+                        continue  # Already posted, skip
+                    
+                    # Insert the recurring transaction
+                    tx_data = {
+                        'user_id': user_id,
+                        'category_id': rule['category_id'],
+                        'amount': rule['amount'],
+                        'description': rule.get('description') or 'Recurring Income',
+                        'transaction_type': rule['transaction_type'],
+                        'transaction_date': str(scheduled_date),
+                        'source': 'recurring',
+                        'recurring_rule_id': rule_id
+                    }
+                    
+                    insert_res = supabase.table('kaban_transactions').insert(tx_data).execute()
+                    
+                    if insert_res.data:
+                        # Update last_posted_date on the rule
+                        supabase.table('recurring_rules').update({
+                            'last_posted_date': str(scheduled_date),
+                            'updated_at': datetime.datetime.now().isoformat()
+                        }).eq('id', rule_id).execute()
+                        
+                        print(f"[Recurring] Auto-posted transaction for rule {rule_id} on {scheduled_date}")
+                        
+    except Exception as e:
+        print(f"[Recurring] Error processing pending transactions: {e}")
+        # Don't raise - this should not block the main request
+
+
+@router.post("/kaban/recurring")
+async def create_recurring_rule(
+    recurring_request: RecurringRuleCreate,
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """Create a new recurring income/expense rule - Available to all users"""
+    user_id = profile['id']
+    
+    # Validate schedule_day based on frequency
+    if recurring_request.frequency == 'monthly' and not (1 <= recurring_request.schedule_day <= 31):
+        raise HTTPException(status_code=400, detail="For monthly frequency, schedule_day must be 1-31")
+    if recurring_request.frequency == 'bimonthly' and not (1 <= recurring_request.schedule_day <= 15):
+        raise HTTPException(status_code=400, detail="For bimonthly frequency, schedule_day must be 1-15 (second payday is auto-calculated)")
+    if recurring_request.frequency == 'weekly' and not (0 <= recurring_request.schedule_day <= 6):
+        raise HTTPException(status_code=400, detail="For weekly frequency, schedule_day must be 0-6 (0=Monday, 6=Sunday)")
+    
+    try:
+        # Verify category exists
+        category_res = supabase.table('expense_categories').select('id').or_(f'user_id.is.null,user_id.eq.{user_id}').eq('id', recurring_request.category_id).execute()
+        if not category_res.data:
+            raise HTTPException(status_code=404, detail="Category not found")
+        
+        # Check for duplicate rule (same amount, description, category, frequency, schedule_day)
+        existing_res = supabase.table('recurring_rules').select('id').eq('user_id', user_id).eq('amount', recurring_request.amount).eq('category_id', recurring_request.category_id).eq('frequency', recurring_request.frequency).eq('schedule_day', recurring_request.schedule_day).eq('is_active', True).execute()
+        
+        if existing_res.data and len(existing_res.data) > 0:
+            raise HTTPException(status_code=400, detail="A similar recurring rule already exists. Delete the existing rule first or use different settings.")
+        
+        rule_data = recurring_request.model_dump()
+        rule_data['user_id'] = user_id
+        
+        insert_res = supabase.table('recurring_rules').insert(rule_data).execute()
+        
+        if not insert_res.data:
+            raise HTTPException(status_code=500, detail="Failed to create recurring rule")
+        
+        return insert_res.data[0]
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Create Recurring Rule Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/kaban/recurring")
+async def get_recurring_rules(
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """Get all recurring rules for the user - Available to all users"""
+    user_id = profile['id']
+    
+    try:
+        rules_res = supabase.table('recurring_rules').select('*, expense_categories(name, emoji)').eq('user_id', user_id).order('created_at', desc=True).execute()
+        return rules_res.data
+        
+    except Exception as e:
+        print(f"Get Recurring Rules Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/kaban/recurring/{rule_id}")
+async def update_recurring_rule(
+    rule_id: str,
+    request: RecurringRuleUpdate,
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """Update a recurring rule - Available to all users"""
+    user_id = profile['id']
+    
+    try:
+        update_data = {k: v for k, v in request.model_dump().items() if v is not None}
+        
+        if not update_data:
+            raise HTTPException(status_code=400, detail="No fields to update")
+        
+        update_data['updated_at'] = datetime.datetime.now().isoformat()
+        
+        update_res = supabase.table('recurring_rules').update(update_data).eq('id', rule_id).eq('user_id', user_id).execute()
+        
+        if not update_res.data:
+            raise HTTPException(status_code=404, detail="Recurring rule not found or permission denied")
+        
+        return update_res.data[0]
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Update Recurring Rule Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/kaban/recurring/{rule_id}")
+async def delete_recurring_rule(
+    rule_id: str,
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """Delete a recurring rule - Available to all users"""
+    user_id = profile['id']
+    
+    try:
+        delete_res = supabase.table('recurring_rules').delete().eq('id', rule_id).eq('user_id', user_id).execute()
+        
+        if not delete_res.data:
+            raise HTTPException(status_code=404, detail="Recurring rule not found or permission denied")
+        
+        return {"message": "Recurring rule deleted successfully", "deleted_id": rule_id}
+        
+    except Exception as e:
+        print(f"Delete Recurring Rule Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
