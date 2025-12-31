@@ -56,6 +56,7 @@ class TransactionRequest(BaseModel):
     transaction_type: str  # "expense" or "income"
     description: Optional[str] = None
     transaction_date: Optional[datetime.date] = None
+    sahod_envelope_id: Optional[str] = None  # Link to Sahod Planner envelope
 
 class TransactionUpdate(BaseModel):
     category_id: Optional[str] = None
@@ -63,6 +64,7 @@ class TransactionUpdate(BaseModel):
     transaction_type: Optional[str] = None
     description: Optional[str] = None
     transaction_date: Optional[datetime.date] = None
+    sahod_envelope_id: Optional[str] = None  # Link to Sahod Planner envelope
 
 class CategoryInfo(BaseModel):
     name: str
@@ -466,8 +468,15 @@ async def update_kaban_transaction(
     # No tier check - all authenticated users can update their own transactions
 
     try:
-        # Only update fields that are provided
-        update_data = {k: v for k, v in request.model_dump().items() if v is not None}
+        # Only update fields that are provided (except sahod_envelope_id which can be explicitly null)
+        update_data = {}
+        for k, v in request.model_dump().items():
+            if k == 'sahod_envelope_id':
+                # Always include sahod_envelope_id if it's in the request (can be None to unlink)
+                if k in request.model_fields_set:
+                    update_data[k] = v
+            elif v is not None:
+                update_data[k] = v
         
         if not update_data:
             raise HTTPException(status_code=400, detail="No fields to update.")
