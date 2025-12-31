@@ -262,6 +262,18 @@ async def update_pay_cycle(
         
         update_data['updated_at'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         
+        # Check if pay_day fields are being updated - if so, invalidate unconfirmed instances
+        pay_day_fields = ['pay_day_1', 'pay_day_2', 'frequency']
+        if any(field in update_data for field in pay_day_fields):
+            # Delete unconfirmed instances for this pay cycle so they get recalculated
+            supabase.table('pay_cycle_instances') \
+                .delete() \
+                .eq('pay_cycle_id', pay_cycle_id) \
+                .eq('user_id', user_id) \
+                .eq('is_assumed', True) \
+                .is_('confirmed_at', 'null') \
+                .execute()
+        
         result = supabase.table('pay_cycles') \
             .update(update_data) \
             .eq('id', pay_cycle_id) \
@@ -334,6 +346,14 @@ async def get_current_instance(
         
         pay_cycle = cycle_res.data[0]
         
+        # Calculate what the period SHOULD be based on current pay cycle settings
+        correct_period_start, correct_period_end, correct_expected_pay_date = get_period_for_date(
+            pay_cycle['frequency'],
+            pay_cycle['pay_day_1'],
+            pay_cycle.get('pay_day_2'),
+            today
+        )
+        
         # Check for existing instance containing today
         instance_res = supabase.table('pay_cycle_instances') \
             .select('*') \
@@ -346,22 +366,31 @@ async def get_current_instance(
         
         if instance_res.data:
             instance = instance_res.data[0]
-        else:
-            # Create new instance for current period
-            period_start, period_end, expected_pay_date = get_period_for_date(
-                pay_cycle['frequency'],
-                pay_cycle['pay_day_1'],
-                pay_cycle.get('pay_day_2'),
-                today
-            )
             
+            # Check if existing instance matches the correct period (pay_day may have changed)
+            # If dates mismatch and instance is unconfirmed, delete and recreate
+            if (instance['is_assumed'] and 
+                instance.get('confirmed_at') is None and
+                (instance['period_start'] != str(correct_period_start) or 
+                 instance['period_end'] != str(correct_period_end))):
+                # Delete mismatched instance
+                supabase.table('pay_cycle_instances') \
+                    .delete() \
+                    .eq('id', instance['id']) \
+                    .execute()
+                instance = None  # Force recreation below
+        else:
+            instance = None
+            
+        if instance is None:
+            # Create new instance for current period
             new_instance = {
                 'user_id': user_id,
                 'pay_cycle_id': pay_cycle['id'],
                 'expected_amount': pay_cycle['expected_amount'],
-                'period_start': str(period_start),
-                'period_end': str(period_end),
-                'expected_pay_date': str(expected_pay_date),
+                'period_start': str(correct_period_start),
+                'period_end': str(correct_period_end),
+                'expected_pay_date': str(correct_expected_pay_date),
                 'is_assumed': True
             }
             
