@@ -12,8 +12,14 @@ ALTER TABLE sahod_pay_cycle_instances
 ADD COLUMN IF NOT EXISTS payday_type TEXT DEFAULT 'single'
 CHECK (payday_type IN ('single', 'kinsenas', 'katapusan'));
 
+-- 1b. Add rollover_processed flag to instances
+ALTER TABLE sahod_pay_cycle_instances 
+ADD COLUMN IF NOT EXISTS rollover_processed BOOLEAN DEFAULT FALSE;
+
 COMMENT ON COLUMN sahod_pay_cycle_instances.payday_type IS 
 'Type of payday: single for monthly, kinsenas/katapusan for bi-monthly';
+COMMENT ON COLUMN sahod_pay_cycle_instances.rollover_processed IS 
+'Flag to prevent double-processing of rollover when period ends';
 
 -- 2. Add split allocation template columns to envelopes
 -- These store the PRO feature: different allocations per payday type

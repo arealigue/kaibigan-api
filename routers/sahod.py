@@ -161,6 +161,74 @@ def calculate_safe_daily_spend(remaining_budget: float, days_left: int) -> float
     return round(remaining_budget / days_left, 2)
 
 
+def process_completed_period_rollover(user_id: str, completed_instance_id: str):
+    """
+    Process rollover for a completed period.
+    Called automatically when a new period starts and the previous period
+    hasn't been processed yet.
+    
+    For each envelope with is_rollover=true:
+    - Calculate remaining = (allocated + rollover) - spent
+    - Add remaining to envelope's cookie_jar
+    - Mark the instance as rollover_processed
+    """
+    try:
+        # Check if already processed
+        instance_check = supabase.table('sahod_pay_cycle_instances') \
+            .select('rollover_processed') \
+            .eq('id', completed_instance_id) \
+            .single() \
+            .execute()
+        
+        if instance_check.data and instance_check.data.get('rollover_processed'):
+            return  # Already processed, skip
+        
+        # Get allocations for this completed period with envelope info
+        allocations = supabase.table('sahod_allocations') \
+            .select('*, sahod_envelopes(id, name, is_rollover, cookie_jar)') \
+            .eq('pay_cycle_instance_id', completed_instance_id) \
+            .eq('user_id', user_id) \
+            .execute()
+        
+        if not allocations.data:
+            return
+        
+        for alloc in allocations.data:
+            envelope = alloc.get('sahod_envelopes', {})
+            
+            # Only process envelopes with is_rollover enabled
+            if not envelope.get('is_rollover', False):
+                continue
+            
+            # Calculate remaining
+            allocated = alloc.get('allocated_amount', 0) or 0
+            rollover = alloc.get('rollover_amount', 0) or 0
+            spent = alloc.get('cached_spent', 0) or 0
+            remaining = (allocated + rollover) - spent
+            
+            # Only add positive remainders to cookie jar
+            if remaining > 0:
+                current_cookie_jar = envelope.get('cookie_jar', 0) or 0
+                new_cookie_jar = current_cookie_jar + remaining
+                
+                # Update the envelope's cookie_jar
+                supabase.table('sahod_envelopes') \
+                    .update({'cookie_jar': new_cookie_jar}) \
+                    .eq('id', envelope['id']) \
+                    .eq('user_id', user_id) \
+                    .execute()
+        
+        # Mark instance as processed
+        supabase.table('sahod_pay_cycle_instances') \
+            .update({'rollover_processed': True}) \
+            .eq('id', completed_instance_id) \
+            .execute()
+            
+    except Exception as e:
+        print(f"Process Rollover Error: {e}")
+        # Don't raise - this is a best-effort operation
+
+
 # ============================================================================
 # PAY CYCLES ENDPOINTS (Templates)
 # ============================================================================
@@ -390,6 +458,23 @@ async def get_current_instance(
             instance = None
             
         if instance is None:
+            # Before creating new instance, process rollover for completed periods
+            # Find the most recent completed (confirmed) period that hasn't been processed
+            completed_periods = supabase.table('sahod_pay_cycle_instances') \
+                .select('id, period_end, rollover_processed') \
+                .eq('user_id', user_id) \
+                .eq('pay_cycle_id', pay_cycle['id']) \
+                .lt('period_end', str(today)) \
+                .eq('is_assumed', False) \
+                .order('period_end', desc=True) \
+                .limit(1) \
+                .execute()
+            
+            if completed_periods.data:
+                last_period = completed_periods.data[0]
+                if not last_period.get('rollover_processed'):
+                    process_completed_period_rollover(user_id, last_period['id'])
+            
             # Create new instance for current period
             new_instance = {
                 'user_id': user_id,
