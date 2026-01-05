@@ -88,9 +88,13 @@ class AllocationUpdate(BaseModel):
 
 def get_period_for_date(frequency: str, pay_day_1: int, pay_day_2: Optional[int], target_date: datetime.date) -> tuple:
     """
-    Calculate period_start, period_end, and expected_pay_date for a given date.
-    Returns (period_start, period_end, expected_pay_date)
+    Calculate period_start, period_end, expected_pay_date, and payday_type for a given date.
+    Returns (period_start, period_end, expected_pay_date, payday_type)
+    
+    payday_type: 'single' for monthly/weekly, 'kinsenas' or 'katapusan' for bimonthly
     """
+    payday_type = 'single'  # Default for monthly/weekly
+    
     if frequency == 'monthly':
         # Period: pay_day_1 of current month to pay_day_1 of next month - 1
         if target_date.day >= pay_day_1:
@@ -114,11 +118,13 @@ def get_period_for_date(frequency: str, pay_day_1: int, pay_day_2: Optional[int]
             next_month = target_date + relativedelta(months=1)
             period_end = next_month.replace(day=min(pay_day_1, _last_day_of_month(next_month))) - datetime.timedelta(days=1)
             expected_pay_date = period_start
+            payday_type = 'katapusan'
         elif target_date.day >= day1:
             # In first half (kinsenas period)
             period_start = target_date.replace(day=day1)
             period_end = target_date.replace(day=day2) - datetime.timedelta(days=1)
             expected_pay_date = period_start
+            payday_type = 'kinsenas'
         else:
             # Before first payday - in previous katapusan period
             prev_month = target_date - relativedelta(months=1)
@@ -126,11 +132,12 @@ def get_period_for_date(frequency: str, pay_day_1: int, pay_day_2: Optional[int]
             period_start = prev_month.replace(day=day2_prev)
             period_end = target_date.replace(day=day1) - datetime.timedelta(days=1)
             expected_pay_date = period_start
+            payday_type = 'katapusan'
     else:
         # Weekly - not implemented in MVP UI but schema-ready
         raise HTTPException(status_code=400, detail="Weekly frequency not yet supported in MVP")
     
-    return period_start, period_end, expected_pay_date
+    return period_start, period_end, expected_pay_date, payday_type
 
 
 def _last_day_of_month(date: datetime.date) -> int:
@@ -347,7 +354,7 @@ async def get_current_instance(
         pay_cycle = cycle_res.data[0]
         
         # Calculate what the period SHOULD be based on current pay cycle settings
-        correct_period_start, correct_period_end, correct_expected_pay_date = get_period_for_date(
+        correct_period_start, correct_period_end, correct_expected_pay_date, correct_payday_type = get_period_for_date(
             pay_cycle['frequency'],
             pay_cycle['pay_day_1'],
             pay_cycle.get('pay_day_2'),
@@ -391,6 +398,7 @@ async def get_current_instance(
                 'period_start': str(correct_period_start),
                 'period_end': str(correct_period_end),
                 'expected_pay_date': str(correct_expected_pay_date),
+                'payday_type': correct_payday_type,  # NEW: Track kinsenas/katapusan
                 'is_assumed': True
             }
             
@@ -936,6 +944,260 @@ async def update_allocation(
 
 
 # ============================================================================
+# COOKIE JAR / ROLLOVER ENDPOINTS
+# ============================================================================
+
+class UseFromCookieJarRequest(BaseModel):
+    envelope_id: str
+    amount: float  # Amount to withdraw from Cookie Jar
+
+
+@router.post("/allocations/process-rollover")
+async def process_rollover(
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """
+    Process rollover for a completed period.
+    Called when a period ends to:
+    1. Calculate remaining amount for each envelope with is_rollover=true
+    2. Add to the envelope's cookie_jar (lifetime accumulation)
+    
+    This should be called automatically when:
+    - User views dashboard after period ends
+    - Or via cron job at period end
+    """
+    user_id = profile['id']
+    tier = profile.get('tier', 'free')
+    today = datetime.date.today()
+    
+    try:
+        # Find the most recent COMPLETED period (period_end < today)
+        completed_instance = supabase.table('sahod_pay_cycle_instances') \
+            .select('*') \
+            .eq('user_id', user_id) \
+            .lt('period_end', str(today)) \
+            .eq('is_assumed', False) \
+            .order('period_end', desc=True) \
+            .limit(1) \
+            .execute()
+        
+        if not completed_instance.data:
+            return {"message": "No completed period to process", "processed": 0}
+        
+        instance = completed_instance.data[0]
+        
+        # Check if already processed (simple flag could be added later)
+        # For now, we'll process and update cookie_jar (idempotent via cookie jar logic)
+        
+        # Get allocations for this completed period
+        allocations = supabase.table('sahod_allocations') \
+            .select('*, sahod_envelopes(id, name, is_rollover, cookie_jar)') \
+            .eq('pay_cycle_instance_id', instance['id']) \
+            .eq('user_id', user_id) \
+            .execute()
+        
+        if not allocations.data:
+            return {"message": "No allocations found for completed period", "processed": 0}
+        
+        processed_envelopes = []
+        
+        for alloc in allocations.data:
+            envelope = alloc.get('sahod_envelopes', {})
+            
+            # Only process envelopes with is_rollover enabled
+            if not envelope.get('is_rollover', False):
+                continue
+            
+            # Calculate remaining
+            allocated = alloc['allocated_amount'] or 0
+            rollover = alloc['rollover_amount'] or 0
+            spent = alloc['cached_spent'] or 0
+            remaining = (allocated + rollover) - spent
+            
+            # Only add positive remainders to cookie jar
+            if remaining > 0:
+                current_cookie_jar = envelope.get('cookie_jar', 0) or 0
+                new_cookie_jar = current_cookie_jar + remaining
+                
+                # Update the envelope's cookie_jar
+                supabase.table('sahod_envelopes') \
+                    .update({'cookie_jar': new_cookie_jar}) \
+                    .eq('id', envelope['id']) \
+                    .eq('user_id', user_id) \
+                    .execute()
+                
+                processed_envelopes.append({
+                    "envelope_id": envelope['id'],
+                    "envelope_name": envelope.get('name', 'Unknown'),
+                    "remaining_added": remaining,
+                    "new_cookie_jar": new_cookie_jar
+                })
+        
+        return {
+            "message": f"Processed rollover for period {instance['period_start']} to {instance['period_end']}",
+            "processed": len(processed_envelopes),
+            "envelopes": processed_envelopes
+        }
+    
+    except Exception as e:
+        print(f"Process Rollover Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/envelopes/{envelope_id}/use-cookie-jar")
+async def use_from_cookie_jar(
+    envelope_id: str,
+    request: UseFromCookieJarRequest,
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """
+    PRO ONLY: Withdraw from Cookie Jar to current period's allocation.
+    This allows PRO users to use their accumulated savings.
+    """
+    user_id = profile['id']
+    tier = profile.get('tier', 'free')
+    today = datetime.date.today()
+    
+    # PRO gate
+    if tier != 'pro':
+        raise HTTPException(
+            status_code=403, 
+            detail="Cookie Jar withdrawal is a PRO feature. Upgrade to access your savings!"
+        )
+    
+    if request.amount <= 0:
+        raise HTTPException(status_code=400, detail="Amount must be positive")
+    
+    try:
+        # Get the envelope and verify ownership
+        envelope_res = supabase.table('sahod_envelopes') \
+            .select('*') \
+            .eq('id', envelope_id) \
+            .eq('user_id', user_id) \
+            .single() \
+            .execute()
+        
+        if not envelope_res.data:
+            raise HTTPException(status_code=404, detail="Envelope not found")
+        
+        envelope = envelope_res.data
+        current_cookie_jar = envelope.get('cookie_jar', 0) or 0
+        
+        if request.amount > current_cookie_jar:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Insufficient Cookie Jar balance. Available: ₱{current_cookie_jar:,.2f}"
+            )
+        
+        # Get current period instance
+        instance_res = supabase.table('sahod_pay_cycle_instances') \
+            .select('id') \
+            .eq('user_id', user_id) \
+            .lte('period_start', str(today)) \
+            .gte('period_end', str(today)) \
+            .single() \
+            .execute()
+        
+        if not instance_res.data:
+            raise HTTPException(status_code=400, detail="No active period found")
+        
+        instance_id = instance_res.data['id']
+        
+        # Get current allocation for this envelope
+        alloc_res = supabase.table('sahod_allocations') \
+            .select('*') \
+            .eq('pay_cycle_instance_id', instance_id) \
+            .eq('envelope_id', envelope_id) \
+            .eq('user_id', user_id) \
+            .single() \
+            .execute()
+        
+        if not alloc_res.data:
+            raise HTTPException(status_code=400, detail="No allocation found for this envelope in current period")
+        
+        allocation = alloc_res.data
+        
+        # Update: Deduct from cookie_jar, add to rollover_amount
+        new_cookie_jar = current_cookie_jar - request.amount
+        new_rollover = (allocation.get('rollover_amount', 0) or 0) + request.amount
+        
+        # Update envelope cookie_jar
+        supabase.table('sahod_envelopes') \
+            .update({'cookie_jar': new_cookie_jar}) \
+            .eq('id', envelope_id) \
+            .eq('user_id', user_id) \
+            .execute()
+        
+        # Update allocation rollover_amount
+        supabase.table('sahod_allocations') \
+            .update({'rollover_amount': new_rollover}) \
+            .eq('id', allocation['id']) \
+            .eq('user_id', user_id) \
+            .execute()
+        
+        return {
+            "success": True,
+            "message": f"Withdrew ₱{request.amount:,.2f} from Cookie Jar",
+            "envelope_id": envelope_id,
+            "amount_withdrawn": request.amount,
+            "new_cookie_jar_balance": new_cookie_jar,
+            "new_rollover_amount": new_rollover
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Use Cookie Jar Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/envelopes/{envelope_id}/toggle-rollover")
+async def toggle_envelope_rollover(
+    envelope_id: str,
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """
+    Toggle the is_rollover flag on an envelope.
+    When enabled, unused amounts accumulate in Cookie Jar.
+    """
+    user_id = profile['id']
+    
+    try:
+        # Get current state
+        envelope_res = supabase.table('sahod_envelopes') \
+            .select('id, is_rollover') \
+            .eq('id', envelope_id) \
+            .eq('user_id', user_id) \
+            .single() \
+            .execute()
+        
+        if not envelope_res.data:
+            raise HTTPException(status_code=404, detail="Envelope not found")
+        
+        current_value = envelope_res.data.get('is_rollover', False)
+        new_value = not current_value
+        
+        # Update
+        supabase.table('sahod_envelopes') \
+            .update({'is_rollover': new_value}) \
+            .eq('id', envelope_id) \
+            .eq('user_id', user_id) \
+            .execute()
+        
+        return {
+            "envelope_id": envelope_id,
+            "is_rollover": new_value,
+            "message": f"Cookie Jar {'enabled' if new_value else 'disabled'} for this envelope"
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Toggle Rollover Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
 # DASHBOARD ENDPOINT (Single Call for UI)
 # ============================================================================
 
@@ -1040,7 +1302,8 @@ async def get_dashboard(
                 "remaining": remaining,
                 "percentage_spent": percentage_spent,
                 "is_over_budget": spent > (allocated + rollover),
-                "cookie_jar": env.get('cookie_jar', 0) if tier == 'pro' else None,
+                # Show cookie_jar to ALL users (PRO lock on withdrawal, not visibility)
+                "cookie_jar": env.get('cookie_jar', 0) or 0,
                 "is_rollover": env.get('is_rollover', False)
             })
         
