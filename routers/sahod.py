@@ -184,7 +184,7 @@ async def create_pay_cycle(
         data = pay_cycle.model_dump()
         data['user_id'] = user_id
         
-        result = supabase.table('pay_cycles').insert(data).execute()
+        result = supabase.table('sahod_pay_cycles').insert(data).execute()
         
         if not result.data:
             raise HTTPException(status_code=500, detail="Failed to create pay cycle")
@@ -205,7 +205,7 @@ async def get_pay_cycles(
     user_id = profile['id']
     
     try:
-        result = supabase.table('pay_cycles') \
+        result = supabase.table('sahod_pay_cycles') \
             .select('*') \
             .eq('user_id', user_id) \
             .eq('is_active', True) \
@@ -227,7 +227,7 @@ async def get_pay_cycle(
     user_id = profile['id']
     
     try:
-        result = supabase.table('pay_cycles') \
+        result = supabase.table('sahod_pay_cycles') \
             .select('*') \
             .eq('id', pay_cycle_id) \
             .eq('user_id', user_id) \
@@ -266,7 +266,7 @@ async def update_pay_cycle(
         pay_day_fields = ['pay_day_1', 'pay_day_2', 'frequency']
         if any(field in update_data for field in pay_day_fields):
             # Delete unconfirmed instances for this pay cycle so they get recalculated
-            supabase.table('pay_cycle_instances') \
+            supabase.table('sahod_pay_cycle_instances') \
                 .delete() \
                 .eq('pay_cycle_id', pay_cycle_id) \
                 .eq('user_id', user_id) \
@@ -274,7 +274,7 @@ async def update_pay_cycle(
                 .is_('confirmed_at', 'null') \
                 .execute()
         
-        result = supabase.table('pay_cycles') \
+        result = supabase.table('sahod_pay_cycles') \
             .update(update_data) \
             .eq('id', pay_cycle_id) \
             .eq('user_id', user_id) \
@@ -300,7 +300,7 @@ async def delete_pay_cycle(
     user_id = profile['id']
     
     try:
-        result = supabase.table('pay_cycles') \
+        result = supabase.table('sahod_pay_cycles') \
             .update({'is_active': False, 'updated_at': datetime.datetime.now(datetime.timezone.utc).isoformat()}) \
             .eq('id', pay_cycle_id) \
             .eq('user_id', user_id) \
@@ -334,7 +334,7 @@ async def get_current_instance(
     
     try:
         # First, get user's active pay cycle
-        cycle_res = supabase.table('pay_cycles') \
+        cycle_res = supabase.table('sahod_pay_cycles') \
             .select('*') \
             .eq('user_id', user_id) \
             .eq('is_active', True) \
@@ -355,7 +355,7 @@ async def get_current_instance(
         )
         
         # Check for existing instance containing today
-        instance_res = supabase.table('pay_cycle_instances') \
+        instance_res = supabase.table('sahod_pay_cycle_instances') \
             .select('*') \
             .eq('user_id', user_id) \
             .eq('pay_cycle_id', pay_cycle['id']) \
@@ -374,7 +374,7 @@ async def get_current_instance(
                 (instance['period_start'] != str(correct_period_start) or 
                  instance['period_end'] != str(correct_period_end))):
                 # Delete mismatched instance
-                supabase.table('pay_cycle_instances') \
+                supabase.table('sahod_pay_cycle_instances') \
                     .delete() \
                     .eq('id', instance['id']) \
                     .execute()
@@ -394,7 +394,7 @@ async def get_current_instance(
                 'is_assumed': True
             }
             
-            create_res = supabase.table('pay_cycle_instances').insert(new_instance).execute()
+            create_res = supabase.table('sahod_pay_cycle_instances').insert(new_instance).execute()
             
             if not create_res.data:
                 raise HTTPException(status_code=500, detail="Failed to create pay cycle instance")
@@ -427,8 +427,8 @@ async def get_pending_instances(
     user_id = profile['id']
     
     try:
-        result = supabase.table('pay_cycle_instances') \
-            .select('*, pay_cycles(cycle_name, frequency)') \
+        result = supabase.table('sahod_pay_cycle_instances') \
+            .select('*, sahod_sahod_pay_cycles(cycle_name, frequency)') \
             .eq('user_id', user_id) \
             .eq('is_assumed', True) \
             .order('period_start', desc=True) \
@@ -453,7 +453,7 @@ async def confirm_instance(
     
     try:
         # Get instance
-        instance_res = supabase.table('pay_cycle_instances') \
+        instance_res = supabase.table('sahod_pay_cycle_instances') \
             .select('*') \
             .eq('id', instance_id) \
             .eq('user_id', user_id) \
@@ -476,7 +476,7 @@ async def confirm_instance(
         else:
             update_data['actual_amount'] = instance['expected_amount']
         
-        result = supabase.table('pay_cycle_instances') \
+        result = supabase.table('sahod_pay_cycle_instances') \
             .update(update_data) \
             .eq('id', instance_id) \
             .eq('user_id', user_id) \
@@ -503,8 +503,8 @@ async def get_instance_history(
     user_id = profile['id']
     
     try:
-        result = supabase.table('pay_cycle_instances') \
-            .select('*, pay_cycles(cycle_name)') \
+        result = supabase.table('sahod_pay_cycle_instances') \
+            .select('*, sahod_pay_cycles(cycle_name)') \
             .eq('user_id', user_id) \
             .order('period_start', desc=True) \
             .limit(limit) \
@@ -534,7 +534,7 @@ async def create_envelope(
     try:
         # Check envelope limit for free users
         if tier != 'pro':
-            count_res = supabase.table('envelopes') \
+            count_res = supabase.table('sahod_envelopes') \
                 .select('id', count='exact') \
                 .eq('user_id', user_id) \
                 .eq('is_active', True) \
@@ -547,7 +547,7 @@ async def create_envelope(
                 )
         
         # Get max sort_order
-        max_order_res = supabase.table('envelopes') \
+        max_order_res = supabase.table('sahod_envelopes') \
             .select('sort_order') \
             .eq('user_id', user_id) \
             .order('sort_order', desc=True) \
@@ -564,7 +564,7 @@ async def create_envelope(
         if tier != 'pro':
             data['is_rollover'] = False
         
-        result = supabase.table('envelopes').insert(data).execute()
+        result = supabase.table('sahod_envelopes').insert(data).execute()
         
         if not result.data:
             raise HTTPException(status_code=500, detail="Failed to create envelope")
@@ -586,7 +586,7 @@ async def get_envelopes(
     user_id = profile['id']
     
     try:
-        result = supabase.table('envelopes') \
+        result = supabase.table('sahod_envelopes') \
             .select('*') \
             .eq('user_id', user_id) \
             .eq('is_active', True) \
@@ -610,7 +610,7 @@ async def get_envelope(
     
     try:
         # Get envelope
-        envelope_res = supabase.table('envelopes') \
+        envelope_res = supabase.table('sahod_envelopes') \
             .select('*') \
             .eq('id', envelope_id) \
             .eq('user_id', user_id) \
@@ -623,7 +623,7 @@ async def get_envelope(
         envelope = envelope_res.data
         
         # Get current instance
-        instance_res = supabase.table('pay_cycle_instances') \
+        instance_res = supabase.table('sahod_pay_cycle_instances') \
             .select('*') \
             .eq('user_id', user_id) \
             .lte('period_start', str(today)) \
@@ -638,7 +638,7 @@ async def get_envelope(
             instance = instance_res.data[0]
             
             # Get allocation for this envelope in current period
-            alloc_res = supabase.table('allocations') \
+            alloc_res = supabase.table('sahod_allocations') \
                 .select('*') \
                 .eq('pay_cycle_instance_id', instance['id']) \
                 .eq('envelope_id', envelope_id) \
@@ -652,7 +652,7 @@ async def get_envelope(
             tx_res = supabase.table('kaban_transactions') \
                 .select('*, expense_categories(name, emoji)') \
                 .eq('user_id', user_id) \
-                .eq('envelope_id', envelope_id) \
+                .eq('sahod_envelope_id', envelope_id) \
                 .gte('transaction_date', instance['period_start']) \
                 .lte('transaction_date', instance['period_end']) \
                 .order('transaction_date', desc=True) \
@@ -695,7 +695,7 @@ async def update_envelope(
         
         update_data['updated_at'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         
-        result = supabase.table('envelopes') \
+        result = supabase.table('sahod_envelopes') \
             .update(update_data) \
             .eq('id', envelope_id) \
             .eq('user_id', user_id) \
@@ -722,7 +722,7 @@ async def delete_envelope(
     user_id = profile['id']
     
     try:
-        result = supabase.table('envelopes') \
+        result = supabase.table('sahod_envelopes') \
             .update({
                 'is_active': False, 
                 'updated_at': datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -753,7 +753,7 @@ async def reorder_envelopes(
     
     try:
         for idx, envelope_id in enumerate(reorder.envelope_ids):
-            supabase.table('envelopes') \
+            supabase.table('sahod_envelopes') \
                 .update({'sort_order': idx}) \
                 .eq('id', envelope_id) \
                 .eq('user_id', user_id) \
@@ -784,7 +784,7 @@ async def fill_allocations(
     
     try:
         # Verify instance belongs to user
-        instance_res = supabase.table('pay_cycle_instances') \
+        instance_res = supabase.table('sahod_pay_cycle_instances') \
             .select('*') \
             .eq('id', fill_request.pay_cycle_instance_id) \
             .eq('user_id', user_id) \
@@ -797,7 +797,7 @@ async def fill_allocations(
         instance = instance_res.data
         
         # Delete existing allocations for this instance (allows re-fill before confirmation)
-        supabase.table('allocations') \
+        supabase.table('sahod_allocations') \
             .delete() \
             .eq('pay_cycle_instance_id', instance['id']) \
             .eq('user_id', user_id) \
@@ -807,7 +807,7 @@ async def fill_allocations(
         created = []
         for alloc in fill_request.allocations:
             # Verify envelope belongs to user
-            env_check = supabase.table('envelopes') \
+            env_check = supabase.table('sahod_envelopes') \
                 .select('id, is_rollover, cookie_jar') \
                 .eq('id', alloc.envelope_id) \
                 .eq('user_id', user_id) \
@@ -823,7 +823,7 @@ async def fill_allocations(
             rollover_amount = 0.0
             if envelope.get('is_rollover'):
                 # Get previous instance
-                prev_instance = supabase.table('pay_cycle_instances') \
+                prev_instance = supabase.table('sahod_pay_cycle_instances') \
                     .select('id') \
                     .eq('user_id', user_id) \
                     .lt('period_start', instance['period_start']) \
@@ -832,7 +832,7 @@ async def fill_allocations(
                     .execute()
                 
                 if prev_instance.data:
-                    prev_alloc = supabase.table('allocations') \
+                    prev_alloc = supabase.table('sahod_allocations') \
                         .select('allocated_amount, cached_spent, rollover_amount') \
                         .eq('pay_cycle_instance_id', prev_instance.data[0]['id']) \
                         .eq('envelope_id', alloc.envelope_id) \
@@ -854,7 +854,7 @@ async def fill_allocations(
                 'cached_spent': 0
             }
             
-            result = supabase.table('allocations').insert(alloc_data).execute()
+            result = supabase.table('sahod_allocations').insert(alloc_data).execute()
             if result.data:
                 created.append(result.data[0])
         
@@ -877,7 +877,7 @@ async def get_current_allocations(
     
     try:
         # Get current instance
-        instance_res = supabase.table('pay_cycle_instances') \
+        instance_res = supabase.table('sahod_pay_cycle_instances') \
             .select('id') \
             .eq('user_id', user_id) \
             .lte('period_start', str(today)) \
@@ -890,8 +890,8 @@ async def get_current_allocations(
         
         instance_id = instance_res.data[0]['id']
         
-        result = supabase.table('allocations') \
-            .select('*, envelopes(name, emoji, color, is_rollover, cookie_jar)') \
+        result = supabase.table('sahod_allocations') \
+            .select('*, sahod_envelopes(name, emoji, color, is_rollover, cookie_jar)') \
             .eq('pay_cycle_instance_id', instance_id) \
             .eq('user_id', user_id) \
             .execute()
@@ -917,7 +917,7 @@ async def update_allocation(
         if not update_data:
             raise HTTPException(status_code=400, detail="No fields to update")
         
-        result = supabase.table('allocations') \
+        result = supabase.table('sahod_allocations') \
             .update(update_data) \
             .eq('id', allocation_id) \
             .eq('user_id', user_id) \
@@ -953,7 +953,7 @@ async def get_dashboard(
     
     try:
         # Get active pay cycle
-        cycle_res = supabase.table('pay_cycles') \
+        cycle_res = supabase.table('sahod_pay_cycles') \
             .select('*') \
             .eq('user_id', user_id) \
             .eq('is_active', True) \
@@ -987,14 +987,14 @@ async def get_dashboard(
         days_remaining = current_instance_response['days_remaining']
         
         # Get all envelopes with their allocations for this instance
-        envelopes_res = supabase.table('envelopes') \
+        envelopes_res = supabase.table('sahod_envelopes') \
             .select('*') \
             .eq('user_id', user_id) \
             .eq('is_active', True) \
             .order('sort_order') \
             .execute()
         
-        allocations_res = supabase.table('allocations') \
+        allocations_res = supabase.table('sahod_allocations') \
             .select('*') \
             .eq('pay_cycle_instance_id', instance['id']) \
             .eq('user_id', user_id) \
@@ -1094,3 +1094,7 @@ async def get_dashboard(
     except Exception as e:
         print(f"Get Dashboard Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+
+

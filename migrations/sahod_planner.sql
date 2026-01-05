@@ -1,10 +1,11 @@
 -- Sahod Planner (4.1 to 4.5) - Supabase SQL
+-- All tables prefixed with "sahod_" for clarity
 -- Targets existing Kaban table: kaban_transactions (has transaction_date already)
 
 create extension if not exists pgcrypto;
 
--- 4.1 ENVELOPES
-create table if not exists public.envelopes (
+-- 4.1 SAHOD_ENVELOPES
+create table if not exists public.sahod_envelopes (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   name text not null,
@@ -19,34 +20,34 @@ create table if not exists public.envelopes (
   updated_at timestamptz default now()
 );
 
-create index if not exists idx_envelopes_user_id on public.envelopes(user_id);
-create index if not exists idx_envelopes_active on public.envelopes(user_id, is_active);
+create index if not exists idx_sahod_envelopes_user_id on public.sahod_envelopes(user_id);
+create index if not exists idx_sahod_envelopes_active on public.sahod_envelopes(user_id, is_active);
 
-alter table public.envelopes enable row level security;
+alter table public.sahod_envelopes enable row level security;
 
-drop policy if exists "Users can view own envelopes" on public.envelopes;
+drop policy if exists "Users can view own envelopes" on public.sahod_envelopes;
 create policy "Users can view own envelopes"
-  on public.envelopes for select
+  on public.sahod_envelopes for select
   using (auth.uid() = user_id);
 
-drop policy if exists "Users can create own envelopes" on public.envelopes;
+drop policy if exists "Users can create own envelopes" on public.sahod_envelopes;
 create policy "Users can create own envelopes"
-  on public.envelopes for insert
+  on public.sahod_envelopes for insert
   with check (auth.uid() = user_id);
 
-drop policy if exists "Users can update own envelopes" on public.envelopes;
+drop policy if exists "Users can update own envelopes" on public.sahod_envelopes;
 create policy "Users can update own envelopes"
-  on public.envelopes for update
+  on public.sahod_envelopes for update
   using (auth.uid() = user_id);
 
-drop policy if exists "Users can delete own envelopes" on public.envelopes;
+drop policy if exists "Users can delete own envelopes" on public.sahod_envelopes;
 create policy "Users can delete own envelopes"
-  on public.envelopes for delete
+  on public.sahod_envelopes for delete
   using (auth.uid() = user_id);
 
 
--- 4.2 PAY CYCLES (template)
-create table if not exists public.pay_cycles (
+-- 4.2 SAHOD_PAY_CYCLES (template)
+create table if not exists public.sahod_pay_cycles (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   cycle_name text default 'My Salary',
@@ -70,22 +71,22 @@ create table if not exists public.pay_cycles (
   )
 );
 
-create index if not exists idx_pay_cycles_user_id on public.pay_cycles(user_id);
+create index if not exists idx_sahod_pay_cycles_user_id on public.sahod_pay_cycles(user_id);
 
-alter table public.pay_cycles enable row level security;
+alter table public.sahod_pay_cycles enable row level security;
 
-drop policy if exists "Users can manage own pay cycles" on public.pay_cycles;
+drop policy if exists "Users can manage own pay cycles" on public.sahod_pay_cycles;
 create policy "Users can manage own pay cycles"
-  on public.pay_cycles for all
+  on public.sahod_pay_cycles for all
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
 
--- 4.3 PAY CYCLE INSTANCES (events)
-create table if not exists public.pay_cycle_instances (
+-- 4.3 SAHOD_PAY_CYCLE_INSTANCES (events)
+create table if not exists public.sahod_pay_cycle_instances (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
-  pay_cycle_id uuid not null references public.pay_cycles(id) on delete cascade,
+  pay_cycle_id uuid not null references public.sahod_pay_cycles(id) on delete cascade,
 
   expected_amount numeric not null,
   actual_amount numeric,
@@ -101,30 +102,30 @@ create table if not exists public.pay_cycle_instances (
   created_at timestamptz default now(),
   updated_at timestamptz default now(),
 
-  constraint unique_instance unique (pay_cycle_id, period_start)
+  constraint unique_sahod_instance unique (pay_cycle_id, period_start)
 );
 
-create index if not exists idx_pay_cycle_instances_user on public.pay_cycle_instances(user_id);
-create index if not exists idx_pay_cycle_instances_period on public.pay_cycle_instances(user_id, period_start, period_end);
-create index if not exists idx_pay_cycle_instances_assumed
-  on public.pay_cycle_instances(user_id, is_assumed)
+create index if not exists idx_sahod_pay_cycle_instances_user on public.sahod_pay_cycle_instances(user_id);
+create index if not exists idx_sahod_pay_cycle_instances_period on public.sahod_pay_cycle_instances(user_id, period_start, period_end);
+create index if not exists idx_sahod_pay_cycle_instances_assumed
+  on public.sahod_pay_cycle_instances(user_id, is_assumed)
   where is_assumed = true;
 
-alter table public.pay_cycle_instances enable row level security;
+alter table public.sahod_pay_cycle_instances enable row level security;
 
-drop policy if exists "Users can manage own pay cycle instances" on public.pay_cycle_instances;
+drop policy if exists "Users can manage own pay cycle instances" on public.sahod_pay_cycle_instances;
 create policy "Users can manage own pay cycle instances"
-  on public.pay_cycle_instances for all
+  on public.sahod_pay_cycle_instances for all
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
 
--- 4.4 ALLOCATIONS (per period + envelope)
-create table if not exists public.allocations (
+-- 4.4 SAHOD_ALLOCATIONS (per period + envelope)
+create table if not exists public.sahod_allocations (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
-  pay_cycle_instance_id uuid not null references public.pay_cycle_instances(id) on delete cascade,
-  envelope_id uuid not null references public.envelopes(id) on delete cascade,
+  pay_cycle_instance_id uuid not null references public.sahod_pay_cycle_instances(id) on delete cascade,
+  envelope_id uuid not null references public.sahod_envelopes(id) on delete cascade,
 
   target_percentage numeric,
   allocated_amount numeric not null,
@@ -133,33 +134,33 @@ create table if not exists public.allocations (
 
   created_at timestamptz default now(),
 
-  constraint unique_allocation unique (pay_cycle_instance_id, envelope_id)
+  constraint unique_sahod_allocation unique (pay_cycle_instance_id, envelope_id)
 );
 
-create index if not exists idx_allocations_user_id on public.allocations(user_id);
-create index if not exists idx_allocations_envelope on public.allocations(envelope_id);
-create index if not exists idx_allocations_instance on public.allocations(pay_cycle_instance_id);
+create index if not exists idx_sahod_allocations_user_id on public.sahod_allocations(user_id);
+create index if not exists idx_sahod_allocations_envelope on public.sahod_allocations(envelope_id);
+create index if not exists idx_sahod_allocations_instance on public.sahod_allocations(pay_cycle_instance_id);
 
-alter table public.allocations enable row level security;
+alter table public.sahod_allocations enable row level security;
 
-drop policy if exists "Users can manage own allocations" on public.allocations;
+drop policy if exists "Users can manage own allocations" on public.sahod_allocations;
 create policy "Users can manage own allocations"
-  on public.allocations for all
+  on public.sahod_allocations for all
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
 
--- 4.5 KABAN TRANSACTIONS: add envelope_id + indexes
+-- 4.5 KABAN TRANSACTIONS: add sahod_envelope_id + indexes
 alter table public.kaban_transactions
-  add column if not exists envelope_id uuid references public.envelopes(id);
+  add column if not exists sahod_envelope_id uuid references public.sahod_envelopes(id);
 
-create index if not exists idx_kaban_transactions_envelope on public.kaban_transactions(envelope_id);
-create index if not exists idx_kaban_transactions_user_envelope_date
-  on public.kaban_transactions(user_id, envelope_id, transaction_date);
+create index if not exists idx_kaban_transactions_sahod_envelope on public.kaban_transactions(sahod_envelope_id);
+create index if not exists idx_kaban_transactions_user_sahod_envelope_date
+  on public.kaban_transactions(user_id, sahod_envelope_id, transaction_date);
 
 
--- Trigger: keep allocations.cached_spent in sync (per period)
-create or replace function public.recalculate_allocation_for_date(
+-- Trigger: keep sahod_allocations.cached_spent in sync (per period)
+create or replace function public.recalculate_sahod_allocation_for_date(
   p_user_id uuid,
   p_envelope_id uuid,
   p_tx_date date
@@ -171,7 +172,7 @@ declare
 begin
   select id, period_start, period_end
     into v_instance_id, v_start, v_end
-  from public.pay_cycle_instances
+  from public.sahod_pay_cycle_instances
   where user_id = p_user_id
     and p_tx_date between period_start and period_end
   order by period_start desc
@@ -181,12 +182,12 @@ begin
     return;
   end if;
 
-  update public.allocations
+  update public.sahod_allocations
   set cached_spent = (
     select coalesce(sum(amount), 0)
     from public.kaban_transactions
     where user_id = p_user_id
-      and envelope_id = p_envelope_id
+      and sahod_envelope_id = p_envelope_id
       and transaction_type = 'expense'
       and transaction_date between v_start and v_end
   )
@@ -196,26 +197,26 @@ begin
 end;
 $$ language plpgsql;
 
-create or replace function public.trg_handle_kaban_transaction_change()
+create or replace function public.trg_handle_sahod_transaction_change()
 returns trigger as $$
 begin
   -- OLD context (DELETE/UPDATE)
-  if (TG_OP = 'DELETE' or TG_OP = 'UPDATE') and OLD.envelope_id is not null then
-    perform public.recalculate_allocation_for_date(OLD.user_id, OLD.envelope_id, OLD.transaction_date);
+  if (TG_OP = 'DELETE' or TG_OP = 'UPDATE') and OLD.sahod_envelope_id is not null then
+    perform public.recalculate_sahod_allocation_for_date(OLD.user_id, OLD.sahod_envelope_id, OLD.transaction_date);
   end if;
 
   -- NEW context (INSERT/UPDATE)
-  if (TG_OP = 'INSERT' or TG_OP = 'UPDATE') and NEW.envelope_id is not null then
-    perform public.recalculate_allocation_for_date(NEW.user_id, NEW.envelope_id, NEW.transaction_date);
+  if (TG_OP = 'INSERT' or TG_OP = 'UPDATE') and NEW.sahod_envelope_id is not null then
+    perform public.recalculate_sahod_allocation_for_date(NEW.user_id, NEW.sahod_envelope_id, NEW.transaction_date);
   end if;
 
   return null;
 end;
 $$ language plpgsql;
 
-drop trigger if exists trg_update_allocation_spent on public.kaban_transactions;
+drop trigger if exists trg_update_sahod_allocation_spent on public.kaban_transactions;
 
-create trigger trg_update_allocation_spent
+create trigger trg_update_sahod_allocation_spent
 after insert or update or delete on public.kaban_transactions
 for each row
-execute function public.trg_handle_kaban_transaction_change();
+execute function public.trg_handle_sahod_transaction_change();
