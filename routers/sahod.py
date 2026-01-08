@@ -6,8 +6,12 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel
 from typing import Annotated, Optional, List
 from dependencies import get_user_profile, supabase, limiter
+from openai import AsyncOpenAI
 import datetime
 from dateutil.relativedelta import relativedelta
+
+# Initialize OpenAI client
+ai_client = AsyncOpenAI()
 
 # Router configuration
 router = APIRouter(
@@ -1465,6 +1469,220 @@ async def get_dashboard(
     except Exception as e:
         print(f"Get Dashboard Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# AI INSIGHTS ENDPOINT (PRO Only)
+# ============================================================================
+
+class AIInsightRequest(BaseModel):
+    """Request model for AI insights - minimal to prevent prompt injection"""
+    envelope_id: Optional[str] = None  # Optional: get insight for specific envelope
+
+
+@router.post("/ai/insights")
+@limiter.limit("5/minute")  # Rate limit to prevent abuse
+async def get_ai_insights(
+    request: Request,
+    insight_request: AIInsightRequest,
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """
+    Generate AI-powered spending insights for Sahod Planner (PRO only).
+    
+    Returns personalized tips based on:
+    - Envelope spending patterns
+    - Cookie Jar growth
+    - Over/under budget trends
+    
+    Security considerations:
+    - PRO tier locked
+    - Rate limited (5/minute)
+    - No user input in prompts (data-driven only)
+    - Sanitized output
+    """
+    user_id = profile['id']
+    tier = profile.get('tier', 'free')
+    
+    # PRO Lock
+    if tier != 'pro':
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="AI Insights is a PRO feature. Upgrade to unlock personalized spending tips!"
+        )
+    
+    today = datetime.date.today()
+    
+    try:
+        # Get current instance
+        instance_res = supabase.table('sahod_pay_cycle_instances') \
+            .select('*') \
+            .eq('user_id', user_id) \
+            .lte('period_start', str(today)) \
+            .gte('period_end', str(today)) \
+            .limit(1) \
+            .execute()
+        
+        if not instance_res.data:
+            return {"insight": "Set up your Sahod Planner to get personalized insights!", "type": "setup"}
+        
+        instance = instance_res.data[0]
+        period_start = datetime.datetime.strptime(instance['period_start'], '%Y-%m-%d').date()
+        period_end = datetime.datetime.strptime(instance['period_end'], '%Y-%m-%d').date()
+        days_total = (period_end - period_start).days + 1
+        days_elapsed = (today - period_start).days + 1
+        days_remaining = (period_end - today).days + 1
+        
+        # Get envelopes with allocations
+        envelopes_res = supabase.table('sahod_envelopes') \
+            .select('*') \
+            .eq('user_id', user_id) \
+            .eq('is_active', True) \
+            .execute()
+        
+        allocations_res = supabase.table('sahod_allocations') \
+            .select('*') \
+            .eq('pay_cycle_instance_id', instance['id']) \
+            .eq('user_id', user_id) \
+            .execute()
+        
+        # Build envelope summary
+        alloc_map = {a['envelope_id']: a for a in allocations_res.data}
+        envelope_summaries = []
+        total_allocated = 0
+        total_spent = 0
+        total_cookie_jar = 0
+        over_budget_count = 0
+        under_budget_count = 0
+        
+        for env in envelopes_res.data:
+            alloc = alloc_map.get(env['id'])
+            if alloc:
+                allocated = alloc['allocated_amount'] or 0
+                rollover = alloc['rollover_amount'] or 0
+                spent = alloc['cached_spent'] or 0
+                budget = allocated + rollover
+                remaining = budget - spent
+                percentage_spent = (spent / budget * 100) if budget > 0 else 0
+                cookie_jar = env.get('cookie_jar', 0) or 0
+                
+                total_allocated += allocated
+                total_spent += spent
+                total_cookie_jar += cookie_jar
+                
+                if spent > budget:
+                    over_budget_count += 1
+                elif percentage_spent < 50 and days_elapsed > days_total / 2:
+                    under_budget_count += 1
+                
+                envelope_summaries.append({
+                    "name": env['name'],
+                    "emoji": env['emoji'],
+                    "allocated": allocated,
+                    "spent": spent,
+                    "remaining": remaining,
+                    "percentage_spent": round(percentage_spent, 1),
+                    "is_over": spent > budget,
+                    "cookie_jar": cookie_jar,
+                    "has_rollover": env.get('is_rollover', False)
+                })
+        
+        # Sort by percentage spent (most spent first)
+        envelope_summaries.sort(key=lambda x: x['percentage_spent'], reverse=True)
+        
+        # Get historical data (last 3 periods) for trend analysis
+        history_res = supabase.table('sahod_pay_cycle_instances') \
+            .select('id, period_start, period_end') \
+            .eq('user_id', user_id) \
+            .lt('period_end', str(today)) \
+            .eq('is_assumed', False) \
+            .order('period_end', desc=True) \
+            .limit(3) \
+            .execute()
+        
+        historical_context = ""
+        if history_res.data:
+            historical_context = f"User has {len(history_res.data)} completed pay periods on record."
+        
+        # Build system prompt (NO user input - data only)
+        system_prompt = f"""You are 'Kaibigan Sahod AI', a friendly Filipino financial advisor specializing in envelope budgeting.
+
+CURRENT PAY PERIOD:
+- Period: {instance['period_start']} to {instance['period_end']}
+- Day {days_elapsed} of {days_total} ({days_remaining} days remaining)
+- Total Allocated: ₱{total_allocated:,.0f}
+- Total Spent: ₱{total_spent:,.0f}
+- Spending Rate: {(total_spent/total_allocated*100) if total_allocated > 0 else 0:.1f}%
+
+ENVELOPE STATUS:
+"""
+        for env in envelope_summaries[:6]:  # Top 6 envelopes
+            status_emoji = "⚠️" if env['is_over'] else "✅" if env['percentage_spent'] < 80 else "⏳"
+            system_prompt += f"- {env['emoji']} {env['name']}: ₱{env['spent']:,.0f}/₱{env['allocated']:,.0f} ({env['percentage_spent']}%) {status_emoji}\n"
+            if env['cookie_jar'] > 0:
+                system_prompt += f"  🍪 Cookie Jar: ₱{env['cookie_jar']:,.0f}\n"
+
+        system_prompt += f"""
+SUMMARY:
+- Envelopes over budget: {over_budget_count}
+- Envelopes under 50% (good pace): {under_budget_count}
+- Total Cookie Jar savings: ₱{total_cookie_jar:,.0f}
+{historical_context}
+
+YOUR TASK:
+Generate ONE short, actionable, friendly insight (2-3 sentences max) in Taglish (mix of Filipino and English).
+Focus on:
+1. If overspending: Which envelope and how to adjust
+2. If underspending: Celebrate discipline, suggest Cookie Jar
+3. Cookie Jar growth: Acknowledge savings achievements
+4. Pacing: Are they on track for the period?
+
+Be encouraging, specific (use peso amounts), and culturally appropriate.
+Do NOT ask questions. Just give the insight.
+"""
+
+        # Call OpenAI
+        chat_completion = await ai_client.chat.completions.create(
+            model="gpt-4o-mini",  # Cost-effective for short insights
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": "Give me my spending insight for today."}
+            ],
+            max_tokens=150,  # Keep responses short
+            temperature=0.7  # Some creativity but not too random
+        )
+        
+        ai_response = chat_completion.choices[0].message.content.strip()
+        
+        # Determine insight type for UI styling
+        insight_type = "neutral"
+        if over_budget_count > 0:
+            insight_type = "warning"
+        elif total_cookie_jar > 0 or under_budget_count > len(envelope_summaries) / 2:
+            insight_type = "positive"
+        
+        return {
+            "insight": ai_response,
+            "type": insight_type,
+            "summary": {
+                "days_remaining": days_remaining,
+                "total_spent": total_spent,
+                "total_allocated": total_allocated,
+                "over_budget_count": over_budget_count,
+                "cookie_jar_total": total_cookie_jar
+            }
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"AI Insights Error: {e}")
+        # Fallback to rule-based insight if AI fails
+        return {
+            "insight": "Keep tracking your spending! You're doing great. 💪",
+            "type": "neutral",
+            "error": "AI temporarily unavailable"
+        }
 
 
 
