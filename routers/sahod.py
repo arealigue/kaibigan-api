@@ -1683,5 +1683,151 @@ Do NOT ask questions. Just give the insight.
         }
 
 
+# ============================================================================
+# EXPORT ENDPOINTS (PRO ONLY)
+# ============================================================================
 
-
+@router.get("/export/csv")
+async def export_csv(
+    profile: Annotated[dict, Depends(get_user_profile)],
+    period: Optional[str] = "current"  # 'current', 'all', or instance_id
+):
+    """
+    Export Sahod data to CSV format.
+    PRO users only.
+    
+    Returns CSV with columns:
+    - Envelope, Allocated, Spent, Remaining, Percentage Used, Rollover, Cookie Jar
+    """
+    user_id = profile['id']
+    tier = profile.get('tier', 'free')
+    
+    if tier != 'pro':
+        raise HTTPException(
+            status_code=403,
+            detail="CSV export is a PRO feature. Upgrade to access."
+        )
+    
+    try:
+        import io
+        import csv
+        from fastapi.responses import StreamingResponse
+        
+        # Get current instance
+        today = datetime.date.today()
+        instance_res = supabase.table('sahod_pay_cycle_instances') \
+            .select('id, period_start, period_end, expected_amount, actual_amount') \
+            .eq('user_id', user_id) \
+            .lte('period_start', str(today)) \
+            .gte('period_end', str(today)) \
+            .limit(1) \
+            .execute()
+        
+        if not instance_res.data:
+            raise HTTPException(status_code=404, detail="No active pay period found")
+        
+        instance = instance_res.data[0]
+        instance_id = instance['id']
+        
+        # Get allocations with envelope info
+        alloc_res = supabase.table('sahod_allocations') \
+            .select('*, sahod_envelopes(name, emoji, color, is_rollover, cookie_jar)') \
+            .eq('pay_cycle_instance_id', instance_id) \
+            .eq('user_id', user_id) \
+            .execute()
+        
+        # Get transactions for this period
+        tx_res = supabase.table('pera_transactions') \
+            .select('envelope_id, amount') \
+            .eq('user_id', user_id) \
+            .gte('transaction_date', instance['period_start']) \
+            .lte('transaction_date', instance['period_end']) \
+            .execute()
+        
+        # Calculate spent per envelope
+        spent_by_envelope = {}
+        for tx in (tx_res.data or []):
+            env_id = tx.get('envelope_id')
+            if env_id:
+                spent_by_envelope[env_id] = spent_by_envelope.get(env_id, 0) + tx['amount']
+        
+        # Build CSV data
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Header
+        writer.writerow([
+            'Envelope',
+            'Emoji',
+            'Allocated (₱)',
+            'Spent (₱)',
+            'Remaining (₱)',
+            '% Used',
+            'Rollover Enabled',
+            'Cookie Jar (₱)'
+        ])
+        
+        total_allocated = 0
+        total_spent = 0
+        
+        for alloc in (alloc_res.data or []):
+            env = alloc.get('sahod_envelopes', {})
+            env_id = alloc.get('envelope_id')
+            allocated = alloc.get('allocated_amount', 0)
+            rollover = alloc.get('rollover_amount', 0)
+            total_for_env = allocated + rollover
+            spent = spent_by_envelope.get(env_id, 0)
+            remaining = total_for_env - spent
+            pct_used = (spent / total_for_env * 100) if total_for_env > 0 else 0
+            
+            total_allocated += total_for_env
+            total_spent += spent
+            
+            writer.writerow([
+                env.get('name', 'Unknown'),
+                env.get('emoji', '📦'),
+                f"{total_for_env:.0f}",
+                f"{spent:.0f}",
+                f"{remaining:.0f}",
+                f"{pct_used:.1f}%",
+                'Yes' if env.get('is_rollover') else 'No',
+                f"{env.get('cookie_jar', 0):.0f}"
+            ])
+        
+        # Add totals row
+        writer.writerow([])
+        writer.writerow([
+            'TOTAL',
+            '',
+            f"{total_allocated:.0f}",
+            f"{total_spent:.0f}",
+            f"{total_allocated - total_spent:.0f}",
+            f"{(total_spent / total_allocated * 100) if total_allocated > 0 else 0:.1f}%",
+            '',
+            ''
+        ])
+        
+        # Add metadata
+        writer.writerow([])
+        writer.writerow(['Period:', f"{instance['period_start']} to {instance['period_end']}"])
+        writer.writerow(['Expected Salary:', f"₱{instance['expected_amount']:.0f}"])
+        if instance.get('actual_amount'):
+            writer.writerow(['Actual Salary:', f"₱{instance['actual_amount']:.0f}"])
+        writer.writerow(['Exported:', str(datetime.datetime.now())])
+        
+        output.seek(0)
+        
+        # Generate filename
+        filename = f"sahod_export_{instance['period_start']}_to_{instance['period_end']}.csv"
+        
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"CSV Export Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
