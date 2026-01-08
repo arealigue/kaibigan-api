@@ -1737,19 +1737,25 @@ async def export_csv(
             .execute()
         
         # Build CSV data (spending is cached in sahod_allocations.cached_spent)
-        output = io.StringIO()
-        writer = csv.writer(output)
+        # Use BytesIO with UTF-8 BOM for Excel compatibility
+        output = io.BytesIO()
+        # Write UTF-8 BOM for Excel to recognize encoding
+        output.write(b'\xef\xbb\xbf')
         
-        # Header
+        # Wrap in TextIOWrapper for csv.writer
+        text_output = io.TextIOWrapper(output, encoding='utf-8', newline='')
+        writer = csv.writer(text_output)
+        
+        # Header (use P instead of ₱ for better compatibility)
         writer.writerow([
             'Envelope',
             'Emoji',
-            'Allocated (₱)',
-            'Spent (₱)',
-            'Remaining (₱)',
+            'Allocated (PHP)',
+            'Spent (PHP)',
+            'Remaining (PHP)',
             '% Used',
             'Rollover Enabled',
-            'Cookie Jar (₱)'
+            'Cookie Jar (PHP)'
         ])
         
         total_allocated = 0
@@ -1794,19 +1800,21 @@ async def export_csv(
         # Add metadata
         writer.writerow([])
         writer.writerow(['Period:', f"{instance['period_start']} to {instance['period_end']}"])
-        writer.writerow(['Expected Salary:', f"₱{instance['expected_amount']:.0f}"])
+        writer.writerow(['Expected Salary:', f"PHP {instance['expected_amount']:.0f}"])
         if instance.get('actual_amount'):
-            writer.writerow(['Actual Salary:', f"₱{instance['actual_amount']:.0f}"])
-        writer.writerow(['Exported:', str(datetime.datetime.now())])
+            writer.writerow(['Actual Salary:', f"PHP {instance['actual_amount']:.0f}"])
+        writer.writerow(['Exported:', datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')])
         
+        # Flush TextIOWrapper to BytesIO
+        text_output.flush()
         output.seek(0)
         
         # Generate filename
         filename = f"sahod_export_{instance['period_start']}_to_{instance['period_end']}.csv"
         
         return StreamingResponse(
-            iter([output.getvalue()]),
-            media_type="text/csv",
+            iter([output.read()]),
+            media_type="text/csv; charset=utf-8",
             headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
     
