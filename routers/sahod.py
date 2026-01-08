@@ -1736,22 +1736,7 @@ async def export_csv(
             .eq('user_id', user_id) \
             .execute()
         
-        # Get transactions for this period
-        tx_res = supabase.table('kaban_transactions') \
-            .select('envelope_id, amount') \
-            .eq('user_id', user_id) \
-            .gte('transaction_date', instance['period_start']) \
-            .lte('transaction_date', instance['period_end']) \
-            .execute()
-        
-        # Calculate spent per envelope
-        spent_by_envelope = {}
-        for tx in (tx_res.data or []):
-            env_id = tx.get('envelope_id')
-            if env_id:
-                spent_by_envelope[env_id] = spent_by_envelope.get(env_id, 0) + tx['amount']
-        
-        # Build CSV data
+        # Build CSV data (spending is cached in sahod_allocations.cached_spent)
         output = io.StringIO()
         writer = csv.writer(output)
         
@@ -1772,11 +1757,10 @@ async def export_csv(
         
         for alloc in (alloc_res.data or []):
             env = alloc.get('sahod_envelopes', {})
-            env_id = alloc.get('envelope_id')
             allocated = alloc.get('allocated_amount', 0)
             rollover = alloc.get('rollover_amount', 0)
             total_for_env = allocated + rollover
-            spent = spent_by_envelope.get(env_id, 0)
+            spent = alloc.get('cached_spent', 0) or 0  # Spending is cached in allocation
             remaining = total_for_env - spent
             pct_used = (spent / total_for_env * 100) if total_for_env > 0 else 0
             
