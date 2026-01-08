@@ -1641,15 +1641,13 @@ Be encouraging, specific (use peso amounts), and culturally appropriate.
 Do NOT ask questions. Just give the insight.
 """
 
-        # Call OpenAI
+        # Call OpenAI - using gpt-5-nano for cost-effective short insights
         chat_completion = await ai_client.chat.completions.create(
-            model="gpt-4o-mini",  # Cost-effective for short insights
+            model="gpt-5-nano",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": "Give me my spending insight for today."}
-            ],
-            max_tokens=150,  # Keep responses short
-            temperature=0.7  # Some creativity but not too random
+            ]
         )
         
         ai_response = chat_completion.choices[0].message.content.strip()
