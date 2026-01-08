@@ -964,7 +964,7 @@ async def fill_allocations(
 async def get_current_allocations(
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
-    """Get allocations for current period."""
+    """Get allocations for current period. Falls back to previous period if none exist."""
     user_id = profile['id']
     today = datetime.date.today()
     
@@ -989,7 +989,30 @@ async def get_current_allocations(
             .eq('user_id', user_id) \
             .execute()
         
-        return result.data
+        # If current period has allocations, return them
+        if result.data:
+            return result.data
+        
+        # Fallback: Get allocations from the most recent previous period
+        prev_instance_res = supabase.table('sahod_pay_cycle_instances') \
+            .select('id') \
+            .eq('user_id', user_id) \
+            .lt('period_end', str(today)) \
+            .order('period_end', desc=True) \
+            .limit(1) \
+            .execute()
+        
+        if prev_instance_res.data:
+            prev_result = supabase.table('sahod_allocations') \
+                .select('*, sahod_envelopes(name, emoji, color, is_rollover, cookie_jar)') \
+                .eq('pay_cycle_instance_id', prev_instance_res.data[0]['id']) \
+                .eq('user_id', user_id) \
+                .execute()
+            
+            # Return previous allocations as templates (frontend will use amounts as defaults)
+            return prev_result.data if prev_result.data else []
+        
+        return []
     except Exception as e:
         print(f"Get Current Allocations Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
