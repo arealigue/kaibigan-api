@@ -1737,7 +1737,7 @@ async def export_csv(
             .execute()
         
         # Get transactions for this period
-        tx_res = supabase.table('pera_transactions') \
+        tx_res = supabase.table('kaban_transactions') \
             .select('envelope_id, amount') \
             .eq('user_id', user_id) \
             .gte('transaction_date', instance['period_start']) \
