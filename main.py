@@ -16,7 +16,7 @@ from slowapi.errors import RateLimitExceeded
 
 # Import shared dependencies and routers
 from dependencies import get_user_profile, supabase, limiter
-from routers import pera
+from routers import pera, sahod
 
 # --- 1. SETUP ---
 load_dotenv()
@@ -63,6 +63,7 @@ app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
 
 # --- 2.5. INCLUDE ROUTERS ---
 app.include_router(pera.router)
+app.include_router(sahod.router)
 
 # --- 3. "SINGLE SOURCE OF TRUTH" DATA ---
 # Budget ranges per head (internal calculations)
