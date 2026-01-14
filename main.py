@@ -27,8 +27,8 @@ API_VERSION = "1.0.0"
 BUILD_DATE = "2025-12-17"
 
 app = FastAPI(
-    title="Kaibigan API",
-    description="The AI backend for KaibiganGPT.",
+    title="KabanKo API",
+    description="The AI backend for KabanKo - Ikaw ang Boss, Si Kaban ang Manager.",
     version=API_VERSION
 )
 
@@ -38,7 +38,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000", 
         "https://kaibigan-web.vercel.app",
-        "https://app.kaibigangpt.com",
+        "https://kabanko.app",
         "https://kaibigan-test-five.vercel.app"
     ],
     allow_credentials=True,
@@ -54,7 +54,7 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     response = _rate_limit_exceeded_handler(request, exc)
     # Add CORS headers to rate limit response
     origin = request.headers.get("origin", "")
-    if origin in ["http://localhost:3000", "https://kaibigan-web.vercel.app", "https://app.kaibigangpt.com"]:
+    if origin in ["http://localhost:3000", "https://kaibigan-web.vercel.app", "https://kabanko.app"]:
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Access-Control-Allow-Credentials"] = "true"
     return response
@@ -170,7 +170,7 @@ class RecipeNotesRequest(BaseModel):
 # --- 5. PUBLIC/FREE ENDPOINTS ---
 @app.get("/")
 def read_root():
-    return {"status": "Kaibigan API is alive and well!"}
+    return {"status": "KabanKo API is alive and well!"}
 
 @app.get("/health")
 def health_check():
@@ -180,7 +180,7 @@ def health_check():
     """
     return {
         "status": "healthy",
-        "service": "Kaibigan API",
+        "service": "KabanKo API",
         "version": API_VERSION,
         "build_date": BUILD_DATE,
         "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
