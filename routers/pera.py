@@ -753,6 +753,11 @@ ANALYSIS STRUCTURE (OUTPUT THIS):
 4. **Quick Wins This Month**
    - Suggest 1-2 immediate actions to improve cash flow NOW.
    - Example: "Challenge: No delivery for 1 week. I-compute natin magkano mase-save."
+
+5. **Take Action (Cross-Sell)**
+   - End with this CTA: "Boss, para mamonitor natin kung nasusunod ang plano, i-setup na natin ang iyong **Sahod Planner** for next month. Doon natin ilalagay ang targets na 'to. 📊"
+
+IMPORTANT: Do NOT end with questions like "Gusto mo ba...?" or "Sabihin mo lang" — this is a report interface, not a chatbot. Always end with a clear action step pointing to another feature.
 """
         
         else:  # savings
@@ -818,6 +823,11 @@ ANALYSIS STRUCTURE (OUTPUT THIS):
      - "Alkansya Method: Lahat ng barya, hulog agad. Monthly mo buksan."
      - "No-Spend Days: Pick 2 days a week na walang gastos sa labas."
    - End with encouragement: "Kaya mo 'to, Boss! Unti-unti lang, may mararating din."
+
+5. **Take Action Now (Cross-Sell)**
+   - End with this CTA: "Boss, huwag na natin patagalin. Pumunta sa **'Pera' (Goals)** tab at i-create ang iyong 'Emergency Fund' goal ngayon na. Ilagay mo ang target na ₱{emergency_fund_target:,.2f} para makita mo ang progress bar mo araw-araw. Simulan na natin! 🎯"
+
+IMPORTANT: Do NOT end with questions like "Sabihin mo kung gusto mo..." or open-ended invitations — this is a report interface, not a chatbot. Always end with a clear action step pointing to another feature.
 """
         
         # Call OpenAI with correct model
