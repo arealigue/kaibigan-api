@@ -636,7 +636,7 @@ LOAN DETAILS:
 - DTI Ratio: {dti_ratio:.2f}%
 
 ANALYSIS STRUCTURE:
-1. **Bossing, eto ang verdict:** (Assess the DTI of {dti_ratio:.2f}%)
+1. **Boss, eto ang verdict:** (Assess the DTI of {dti_ratio:.2f}%)
    - Below 10%: "✅ Very manageable 'to! Sisiw lang sa budget mo."
    - 10-20%: "👍 Affordable pa rin, pero stay disciplined."
    - 20-30%: "⚠️ Medyo mahigpit 'to. Konting allowance na lang ang matitira for savings."
