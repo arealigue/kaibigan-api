@@ -698,6 +698,18 @@ ANALYSIS STRUCTURE (OUTPUT THIS):
    - Give 3-5 specific ways to fix the budget based on THEIR data.
    - Example: "Kung babawasan mo ang Food budget by 10%, may extra ₱X ka for savings."
    - End with encouragement: "Kaya natin 'to, Boss! Adjust lang ng konti."
+
+5. **Take Action (Cross-Sell)**
+   - End with this CTA: "Boss, para mamonitor ang progress mo, i-setup na natin ang iyong **Sahod Planner**. Doon mo makikita kung nasusunod ang budget plan na 'to. 📊"
+
+FORMATTING RULES:
+- Use **bold** for section headers and key emphasis
+- Use emojis at the start of categories and for visual markers
+- Use bullet points for lists
+- Keep paragraphs short and scannable
+- Always show peso amounts with ₱ symbol and proper comma formatting
+
+IMPORTANT: Do NOT end with open-ended questions like "Gusto mo ba...?" — this is a report interface, not a chatbot.
 """
         
         elif analysis_request.analysis_type == "spending":
@@ -756,6 +768,13 @@ ANALYSIS STRUCTURE (OUTPUT THIS):
 
 5. **Take Action (Cross-Sell)**
    - End with this CTA: "Boss, para mamonitor natin kung nasusunod ang plano, i-setup na natin ang iyong **Sahod Planner** for next month. Doon natin ilalagay ang targets na 'to. 📊"
+
+FORMATTING RULES:
+- Use **bold** for section headers and key emphasis
+- Use emojis at the start of categories and for visual markers
+- Use bullet points for lists
+- Keep paragraphs short and scannable
+- Always show peso amounts with ₱ symbol and proper comma formatting
 
 IMPORTANT: Do NOT end with questions like "Gusto mo ba...?" or "Sabihin mo lang" — this is a report interface, not a chatbot. Always end with a clear action step pointing to another feature.
 """
@@ -827,6 +846,13 @@ ANALYSIS STRUCTURE (OUTPUT THIS):
 5. **Take Action Now (Cross-Sell)**
    - End with this CTA: "Boss, huwag na natin patagalin. Pumunta sa **'Pera' (Goals)** tab at i-create ang iyong 'Emergency Fund' goal ngayon na. Ilagay mo ang target na ₱{emergency_fund_target:,.2f} para makita mo ang progress bar mo araw-araw. Simulan na natin! 🎯"
 
+FORMATTING RULES:
+- Use **bold** for section headers and key emphasis
+- Use emojis at the start of milestones and for visual markers (🏁, 🛡️, 🏰, 🚨, 👍, 🎉)
+- Use bullet points for lists
+- Keep paragraphs short and scannable
+- Always show peso amounts with ₱ symbol and proper comma formatting
+
 IMPORTANT: Do NOT end with questions like "Sabihin mo kung gusto mo..." or open-ended invitations — this is a report interface, not a chatbot. Always end with a clear action step pointing to another feature.
 """
         
@@ -877,11 +903,29 @@ async def ai_financial_chat(
         top_categories = sorted(category_breakdown.items(), key=lambda x: x[1]["total"], reverse=True)[:5]
         savings_rate = (chat_request.summary.balance / chat_request.summary.total_income * 100) if chat_request.summary.total_income > 0 else 0
         
+        # Format spending breakdown
+        spending_breakdown_formatted = ""
+        for cat_name, cat_data in top_categories:
+            percentage = (cat_data["total"] / chat_request.summary.total_expense * 100) if chat_request.summary.total_expense > 0 else 0
+            spending_breakdown_formatted += f"- {cat_data['emoji']} {cat_name}: ₱{cat_data['total']:,.2f} ({percentage:.1f}%) - {cat_data['count']} transactions\n"
+        
         # Build system prompt with user's financial context
         system_prompt = f"""
-You are 'Kaibigan Pera', a friendly and knowledgeable Filipino financial advisor AI assistant.
+Ikaw si Kaibigan, ang personal financial manager ng user. Ito ay isang chat interface — pwede ka makipag-usap naturally.
 
-USER'S CURRENT FINANCIAL SITUATION:
+BRAND VOICE:
+- **Tone:** Taglish, Friendly, Direct ("Real Talk") pero approachable.
+- **Address:** Call the user "Boss".
+- **Style:** Use emojis sparingly, be conversational. Keep replies short (2-4 paragraphs max unless they ask for details).
+- **Cultural Context:** Understand "Budol", "Petsa de Peligro", "Ipon", "Tipid", "Sweldo", "Paluwagan", delivery culture (GrabFood, Foodpanda).
+
+CROSS-SELL (When Relevant):
+- If they ask about tracking expenses and income → mention "Kaibigan Kaban" or just "Kaban"
+- If they ask about meal planning or food costs → mention "Kusina" feature
+- If they ask about budget planning → mention "Sahod Planner"
+- If they ask about saving goals → mention "Ipon" or "Kaibigan Ipon" tab
+
+USER'S FINANCIAL DATA:
 - Monthly Income: ₱{chat_request.summary.total_income:,.2f}
 - Monthly Expenses: ₱{chat_request.summary.total_expense:,.2f}
 - Current Balance: ₱{chat_request.summary.balance:,.2f}
@@ -889,31 +933,21 @@ USER'S CURRENT FINANCIAL SITUATION:
 - Total Transactions: {chat_request.summary.transaction_count}
 
 TOP SPENDING CATEGORIES:
-"""
-        for cat_name, cat_data in top_categories:
-            percentage = (cat_data["total"] / chat_request.summary.total_expense * 100) if chat_request.summary.total_expense > 0 else 0
-            system_prompt += f"- {cat_data['emoji']} {cat_name}: ₱{cat_data['total']:,.2f} ({percentage:.1f}%) - {cat_data['count']} transactions\n"
-        
-        system_prompt += """
-
-YOUR ROLE:
-You are a conversational financial advisor helping Filipinos manage their money better. Be:
-- Conversational, friendly, and supportive (but professional)
-- Culturally aware (use Filipino terms like "ipon", "tipid", "paluwagan" when appropriate)
-- Specific and actionable (reference their actual data and amounts)
-- Encouraging about their progress
-- Realistic about goals based on their income level
+{spending_breakdown_formatted}
 
 GUIDELINES:
 - Always use peso amounts (₱) when discussing money
-- Reference their specific transactions and spending patterns when relevant
-- Provide practical, actionable advice they can implement immediately
-- Consider typical Filipino household expenses and priorities
-- Be encouraging but honest about financial challenges
-- If they ask about a specific category, calculate percentages and give context
-- Suggest realistic goals based on their current income (₱{chat_request.summary.total_income:,.2f})
+- Reference their actual transactions and spending patterns when relevant
+- Be encouraging pero honest — "Real Talk"
+- Kung di ka sure sa sagot, sabihin mo honestly
+- Keep responses 100-200 words unless they ask for detailed breakdown
+- Use **bold** for emphasis on key points
+- Use bullet points for lists
 
-Keep responses conversational and around 150-250 words unless they ask for detailed analysis.
+FORMATTING:
+- Use markdown formatting: **bold** for headers/emphasis, bullet points for lists
+- Keep paragraphs short (2-3 sentences max)
+- Use emojis sparingly to add personality
 """
         
         # Build messages list with chat history
