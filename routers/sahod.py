@@ -1033,7 +1033,9 @@ async def get_current_allocations(
 
 
 @router.put("/allocations/{allocation_id}")
+@limiter.limit("60/minute")
 async def update_allocation(
+    request: Request,
     allocation_id: str,
     allocation: AllocationUpdate,
     profile: Annotated[dict, Depends(get_user_profile)]
@@ -1075,7 +1077,9 @@ class UseFromCookieJarRequest(BaseModel):
 
 
 @router.post("/allocations/process-rollover")
+@limiter.limit("10/minute")
 async def process_rollover(
+    request: Request,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
     """
@@ -1167,9 +1171,11 @@ async def process_rollover(
 
 
 @router.post("/envelopes/{envelope_id}/use-cookie-jar")
+@limiter.limit("20/minute")
 async def use_from_cookie_jar(
+    request: Request,
     envelope_id: str,
-    request: UseFromCookieJarRequest,
+    withdraw_request: UseFromCookieJarRequest,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
     """
@@ -1187,7 +1193,7 @@ async def use_from_cookie_jar(
             detail="Cookie Jar withdrawal is a PRO feature. Upgrade to access your savings!"
         )
     
-    if request.amount <= 0:
+    if withdraw_request.amount <= 0:
         raise HTTPException(status_code=400, detail="Amount must be positive")
     
     try:
@@ -1205,7 +1211,7 @@ async def use_from_cookie_jar(
         envelope = envelope_res.data
         current_cookie_jar = envelope.get('cookie_jar', 0) or 0
         
-        if request.amount > current_cookie_jar:
+        if withdraw_request.amount > current_cookie_jar:
             raise HTTPException(
                 status_code=400, 
                 detail=f"Insufficient Cookie Jar balance. Available: ₱{current_cookie_jar:,.2f}"
@@ -1240,8 +1246,8 @@ async def use_from_cookie_jar(
         allocation = alloc_res.data
         
         # Update: Deduct from cookie_jar, add to rollover_amount
-        new_cookie_jar = current_cookie_jar - request.amount
-        new_rollover = (allocation.get('rollover_amount', 0) or 0) + request.amount
+        new_cookie_jar = current_cookie_jar - withdraw_request.amount
+        new_rollover = (allocation.get('rollover_amount', 0) or 0) + withdraw_request.amount
         
         # Update envelope cookie_jar
         supabase.table('sahod_envelopes') \
@@ -1259,9 +1265,9 @@ async def use_from_cookie_jar(
         
         return {
             "success": True,
-            "message": f"Withdrew ₱{request.amount:,.2f} from Cookie Jar",
+            "message": f"Withdrew ₱{withdraw_request.amount:,.2f} from Cookie Jar",
             "envelope_id": envelope_id,
-            "amount_withdrawn": request.amount,
+            "amount_withdrawn": withdraw_request.amount,
             "new_cookie_jar_balance": new_cookie_jar,
             "new_rollover_amount": new_rollover
         }
@@ -1274,7 +1280,9 @@ async def use_from_cookie_jar(
 
 
 @router.put("/envelopes/{envelope_id}/toggle-rollover")
+@limiter.limit("30/minute")
 async def toggle_envelope_rollover(
+    request: Request,
     envelope_id: str,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
