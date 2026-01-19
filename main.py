@@ -37,7 +37,6 @@ def _truthy_env(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "y", "on"}
 
 ALLOWED_ORIGINS = [
-    "http://localhost:3000",
     "https://kaibigan-web.vercel.app",
     "https://kabanko.app",
     "https://kaibigan-test-five.vercel.app",
