@@ -8,6 +8,9 @@ from typing import Annotated, Optional, List, Literal
 from dependencies import get_user_profile, supabase, limiter
 from openai import AsyncOpenAI
 import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Initialize OpenAI client
 client = AsyncOpenAI()
@@ -342,7 +345,8 @@ async def generate_utang_message(
         ai_response = chat_completion.choices[0].message.content
         return {"message": ai_response}
     except Exception as e:
-        return {"error": str(e)}
+        logger.exception("generate_utang_message failed")
+        raise HTTPException(status_code=502, detail="AI service temporarily unavailable")
 
 
 # --- KAIBIGAN KABAN (EXPENSE TRACKER) ENDPOINTS ---

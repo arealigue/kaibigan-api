@@ -3,6 +3,7 @@ import json
 import hmac
 import hashlib
 import base64
+import logging
 from fastapi import FastAPI, Depends, HTTPException, status, Header, Request
 from pydantic import BaseModel
 from openai import AsyncOpenAI
@@ -18,6 +19,8 @@ from slowapi.errors import RateLimitExceeded
 # Import shared dependencies and routers
 from dependencies import get_user_profile, supabase, limiter
 from routers import pera, sahod
+
+logger = logging.getLogger(__name__)
 
 # --- 1. SETUP ---
 load_dotenv()
@@ -259,7 +262,8 @@ def calculate_loan(request: Request, loan_request: LoanCalculatorRequest):
             "loan_term_years": loan_request.loan_term_years
         }
     except Exception as e:
-        return {"error": str(e)}
+        logger.exception("calculate_loan failed")
+        raise HTTPException(status_code=500, detail="Loan calculation failed")
 
 @app.get("/search-assistance")
 @limiter.limit("60/minute")
@@ -320,7 +324,8 @@ async def record_privacy_consent(
             "consent_date": consent_data['privacy_consent_date']
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to record consent: {str(e)}")
+        logger.exception("Failed to record privacy consent")
+        raise HTTPException(status_code=500, detail="Failed to record consent")
 
 
 @app.get("/user/consent-status")
@@ -359,7 +364,8 @@ async def chat_with_ai(
         ai_response = chat_completion.choices[0].message.content
         return {"response": ai_response}
     except Exception as e:
-        return {"error": str(e)}
+        logger.exception("chat_with_ai failed")
+        raise HTTPException(status_code=502, detail="AI service temporarily unavailable")
 
 @app.post("/generate-meal-plan")
 @limiter.limit("5/minute")
@@ -639,8 +645,8 @@ async def generate_meal_plan(
         
         return response_data
     except Exception as e:
-        print(f"Meal Plan Error: {e}")
-        return {"error": str(e)}
+        logger.exception("generate_meal_plan failed")
+        raise HTTPException(status_code=502, detail="AI service temporarily unavailable")
 
 @app.post("/analyze-loan")
 @limiter.limit("5/minute")
@@ -733,7 +739,8 @@ Start with a warm Taglish greeting. End with encouragement.
         ai_response = chat_completion.choices[0].message.content
         return {"analysis": ai_response, "prompt_debug": system_prompt}
     except Exception as e:
-        return {"error": str(e)}
+        logger.exception("analyze_loan failed")
+        raise HTTPException(status_code=502, detail="AI service temporarily unavailable")
 
 @app.post("/analyze-assistance")
 @limiter.limit("5/minute")
@@ -784,7 +791,8 @@ async def analyze_assistance(
         ai_response = chat_completion.choices[0].message.content
         return {"analysis": ai_response, "prompt_debug": system_prompt}
     except Exception as e:
-        return {"error": str(e)}
+        logger.exception("analyze_assistance failed")
+        raise HTTPException(status_code=502, detail="AI service temporarily unavailable")
 
 @app.post("/recipes/create-from-notes")
 @limiter.limit("5/minute")
