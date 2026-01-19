@@ -860,7 +860,9 @@ async def create_recipe_from_notes(
 
         return insert_res.data[0] 
 
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         logger.exception("recipes/create-from-notes failed")
         raise HTTPException(status_code=502, detail="AI service temporarily unavailable")
 
@@ -921,13 +923,13 @@ async def webhook_lemonsqueezy(request: Request):
 
             # Decrement Promo Logic (Only on creation)
             if event_name == "subscription_created":
-                    try:
-                        promo_res = supabase.table('launch_promo').select('spots_remaining').eq('id', 1).single().execute()
-                        if promo_res.data and promo_res.data['spots_remaining'] > 0:
-                            new_spots = promo_res.data['spots_remaining'] - 1
-                            supabase.table('launch_promo').update({'spots_remaining': new_spots}).eq('id', 1).execute()
-                    except Exception:
-                        logger.exception("webhook-lemonsqueezy: promo decrement failed")
+                try:
+                    promo_res = supabase.table('launch_promo').select('spots_remaining').eq('id', 1).single().execute()
+                    if promo_res.data and promo_res.data['spots_remaining'] > 0:
+                        new_spots = promo_res.data['spots_remaining'] - 1
+                        supabase.table('launch_promo').update({'spots_remaining': new_spots}).eq('id', 1).execute()
+                except Exception:
+                    logger.exception("webhook-lemonsqueezy: promo decrement failed")
 
         # CASE B: Subscription Expired (Downgrade to FREE)
         elif event_name == "subscription_expired":
@@ -943,7 +945,9 @@ async def webhook_lemonsqueezy(request: Request):
 
         return {"status": "success"}
 
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         logger.exception("webhook-lemonsqueezy failed")
         raise HTTPException(status_code=500, detail="Webhook processing failed")
 

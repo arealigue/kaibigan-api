@@ -295,7 +295,9 @@ async def get_pay_cycles(
             .execute()
         
         return result.data
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         logger.exception("get_pay_cycles failed")
         raise HTTPException(status_code=500, detail="Failed to load pay cycles")
 
@@ -539,7 +541,9 @@ async def get_pending_instances(
             .execute()
         
         return result.data
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         logger.exception("get_pending_instances failed")
         raise HTTPException(status_code=500, detail="Failed to load pending instances")
 
@@ -615,7 +619,9 @@ async def get_instance_history(
             .execute()
         
         return result.data
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         logger.exception("get_instance_history failed")
         raise HTTPException(status_code=500, detail="Failed to load instance history")
 
@@ -698,7 +704,9 @@ async def get_envelopes(
             .execute()
         
         return result.data
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         logger.exception("get_envelopes failed")
         raise HTTPException(status_code=500, detail="Failed to load envelopes")
 

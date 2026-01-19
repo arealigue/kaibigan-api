@@ -146,7 +146,9 @@ async def create_ipon_goal(
             raise HTTPException(status_code=500, detail="Failed to create goal.")
             
         return insert_res.data[0]
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         logger.exception("create_ipon_goal failed")
         raise HTTPException(status_code=500, detail="Failed to create goal")
 
@@ -164,7 +166,9 @@ async def get_ipon_goals(
     try:
         goals_res = supabase.table('ipon_goals').select('*').eq('user_id', user_id).order('created_at', desc=True).execute()
         return goals_res.data
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         logger.exception("get_ipon_goals failed")
         raise HTTPException(status_code=500, detail="Failed to load goals")
 
@@ -196,7 +200,9 @@ async def add_ipon_transaction(
             raise HTTPException(status_code=500, detail="Failed to add transaction.")
         
         return insert_res.data[0]
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         logger.exception("add_ipon_transaction failed")
         raise HTTPException(status_code=500, detail="Failed to add transaction")
 
@@ -217,7 +223,9 @@ async def get_goal_transactions(
     try:
         tx_res = supabase.table('transactions').select('*').eq('user_id', user_id).eq('goal_id', goal_id).order('created_at', desc=True).execute()
         return tx_res.data
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         logger.exception("get_goal_transactions failed")
         raise HTTPException(status_code=500, detail="Failed to load transactions")
 
@@ -261,7 +269,9 @@ async def create_utang_record(
             raise HTTPException(status_code=500, detail="Failed to create utang record.")
             
         return insert_res.data[0]
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         logger.exception("create_utang_record failed")
         raise HTTPException(status_code=500, detail="Failed to create utang record")
 
@@ -277,7 +287,9 @@ async def get_utang_records(
     try:
         utang_res = supabase.table('utang').select('*').eq('user_id', user_id).eq('status', 'unpaid').order('due_date', desc=False).execute()
         return utang_res.data
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         logger.exception("get_utang_records failed")
         raise HTTPException(status_code=500, detail="Failed to load utang records")
 
@@ -301,7 +313,9 @@ async def update_utang_status(
             raise HTTPException(status_code=404, detail="Utang record not found or permission denied.")
             
         return update_res.data[0]
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         logger.exception("update_utang_status failed")
         raise HTTPException(status_code=500, detail="Failed to update utang status")
 
@@ -344,7 +358,9 @@ async def generate_utang_message(
         )
         ai_response = chat_completion.choices[0].message.content
         return {"message": ai_response}
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         logger.exception("generate_utang_message failed")
         raise HTTPException(status_code=502, detail="AI service temporarily unavailable")
 
@@ -363,7 +379,9 @@ async def get_kaban_categories(
         # Get default categories (user_id is NULL) and user's custom categories
         categories_res = supabase.table('expense_categories').select('*').or_(f'user_id.is.null,user_id.eq.{user_id}').order('name', desc=False).execute()
         return categories_res.data
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         logger.exception("get_kaban_categories failed")
         raise HTTPException(status_code=500, detail="Failed to load categories")
 
@@ -391,7 +409,9 @@ async def create_custom_category(
             raise HTTPException(status_code=500, detail="Failed to create category.")
             
         return insert_res.data[0]
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         logger.exception("create_custom_category failed")
         raise HTTPException(status_code=500, detail="Failed to create category")
 
@@ -466,7 +486,9 @@ async def get_kaban_transactions(
         
         tx_res = query.order('transaction_date', desc=True).execute()
         return tx_res.data
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         logger.exception("get_kaban_transactions failed")
         raise HTTPException(status_code=500, detail="Failed to load transactions")
 
@@ -503,7 +525,9 @@ async def update_kaban_transaction(
             raise HTTPException(status_code=404, detail="Transaction not found or permission denied.")
             
         return update_res.data[0]
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         logger.exception("update_kaban_transaction failed")
         raise HTTPException(status_code=500, detail="Failed to update transaction")
 
@@ -526,7 +550,9 @@ async def delete_kaban_transaction(
             raise HTTPException(status_code=404, detail="Transaction not found or permission denied.")
             
         return {"message": "Transaction deleted successfully", "deleted_id": transaction_id}
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         logger.exception("delete_kaban_transaction failed")
         raise HTTPException(status_code=500, detail="Failed to delete transaction")
 
@@ -570,7 +596,9 @@ async def get_kaban_summary(
             "balance": balance,
             "transaction_count": len(tx_res.data)
         }
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         logger.exception("get_kaban_summary failed")
         raise HTTPException(status_code=500, detail="Failed to load summary")
 
@@ -630,7 +658,9 @@ async def get_category_stats(
             "categories": result,
             "total_categories": len(result)
         }
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         logger.exception("get_category_stats failed")
         raise HTTPException(status_code=500, detail="Failed to load category stats")
 
@@ -889,8 +919,10 @@ IMPORTANT: Do NOT end with questions like "Sabihin mo kung gusto mo..." or open-
         
         ai_response = chat_completion.choices[0].message.content
         return {"analysis": ai_response}
-    
-    except Exception as e:
+
+    except HTTPException:
+        raise
+    except Exception:
         logger.exception("ai_financial_analysis failed")
         raise HTTPException(status_code=502, detail="AI service temporarily unavailable")
 
@@ -990,8 +1022,10 @@ FORMATTING:
         
         ai_response = chat_completion.choices[0].message.content
         return {"response": ai_response}
-    
-    except Exception as e:
+
+    except HTTPException:
+        raise
+    except Exception:
         logger.exception("ai_financial_chat failed")
         raise HTTPException(status_code=502, detail="AI service temporarily unavailable")
 
@@ -1169,7 +1203,9 @@ async def create_recurring_rule(
         
     except HTTPException:
         raise
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         logger.exception("create_recurring_rule failed")
         raise HTTPException(status_code=500, detail="Failed to create recurring rule")
 
@@ -1185,7 +1221,9 @@ async def get_recurring_rules(
         rules_res = supabase.table('recurring_rules').select('*, expense_categories(name, emoji)').eq('user_id', user_id).order('created_at', desc=True).execute()
         return rules_res.data
         
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         logger.exception("get_recurring_rules failed")
         raise HTTPException(status_code=500, detail="Failed to load recurring rules")
 
@@ -1218,7 +1256,9 @@ async def update_recurring_rule(
         
     except HTTPException:
         raise
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         logger.exception("update_recurring_rule failed")
         raise HTTPException(status_code=500, detail="Failed to update recurring rule")
 
@@ -1241,6 +1281,8 @@ async def delete_recurring_rule(
         
         return {"message": "Recurring rule deleted successfully", "deleted_id": rule_id}
         
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         logger.exception("delete_recurring_rule failed")
         raise HTTPException(status_code=500, detail="Failed to delete recurring rule")
