@@ -256,7 +256,9 @@ def search_assistance(request: Request, keyword: str = "", category: str = ""):
 
 # --- 6. PRIVACY CONSENT ENDPOINTS ---
 @app.post("/user/consent")
+@limiter.limit("60/minute")
 async def record_privacy_consent(
+    request: Request,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
     """Record user's privacy policy consent with timestamp"""
@@ -281,7 +283,9 @@ async def record_privacy_consent(
 
 
 @app.get("/user/consent-status")
+@limiter.limit("60/minute")
 async def get_consent_status(
+    request: Request,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
     """Check if user has consented to privacy policy"""
@@ -886,4 +890,5 @@ async def webhook_lemonsqueezy(request: Request):
 
     except Exception as e:
         print(f"WEBHOOK EXCEPTION: {e}")
-        return {"status": "error", "message": str(e)}
+        raise HTTPException(status_code=500, detail="Webhook processing failed")
+

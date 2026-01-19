@@ -121,8 +121,10 @@ class RecurringRuleUpdate(BaseModel):
 # --- IPON TRACKER ENDPOINTS ---
 
 @router.post("/ipon/goals")
+@limiter.limit("20/minute")
 async def create_ipon_goal(
-    request: IponGoalCreate,
+    request: Request,
+    goal_request: IponGoalCreate,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
     """Create a new savings goal (Pro only)"""
@@ -132,7 +134,7 @@ async def create_ipon_goal(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ipon Tracker is a Pro feature.")
 
     try:
-        goal_data = request.model_dump()
+        goal_data = goal_request.model_dump()
         goal_data['user_id'] = user_id
         
         insert_res = supabase.table('ipon_goals').insert(goal_data).execute()
@@ -165,8 +167,10 @@ async def get_ipon_goals(
 
 
 @router.post("/ipon/transactions")
+@limiter.limit("30/minute")
 async def add_ipon_transaction(
-    request: TransactionCreate,
+    request: Request,
+    transaction_request: TransactionCreate,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
     """Add a transaction to a savings goal (Pro only)"""
@@ -176,11 +180,11 @@ async def add_ipon_transaction(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ipon Tracker is a Pro feature.")
     
     try:
-        goal_res = supabase.table('ipon_goals').select('id').eq('id', request.goal_id).eq('user_id', user_id).single().execute()
+        goal_res = supabase.table('ipon_goals').select('id').eq('id', transaction_request.goal_id).eq('user_id', user_id).single().execute()
         if not goal_res.data:
             raise HTTPException(status_code=404, detail="Goal not found or you do not have permission.")
 
-        tx_data = request.model_dump()
+        tx_data = transaction_request.model_dump()
         tx_data['user_id'] = user_id
         
         insert_res = supabase.table('transactions').insert(tx_data).execute()
@@ -195,7 +199,9 @@ async def add_ipon_transaction(
 
 
 @router.get("/ipon/goals/{goal_id}/transactions")
+@limiter.limit("60/minute")
 async def get_goal_transactions(
+    request: Request,
     goal_id: str,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
@@ -216,8 +222,10 @@ async def get_goal_transactions(
 # --- UTANG TRACKER ENDPOINTS ---
 
 @router.post("/utang/debts")
+@limiter.limit("30/minute")
 async def create_utang_record(
-    request: UtangCreate,
+    request: Request,
+    utang_request: UtangCreate,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
     """Create a new debt record - Free users limited to 1 unpaid debt, Pro users unlimited"""
@@ -241,7 +249,7 @@ async def create_utang_record(
             print(f"Error checking debt count: {e}")
 
     try:
-        utang_data = request.model_dump()
+        utang_data = utang_request.model_dump()
         utang_data['user_id'] = user_id
         
         insert_res = supabase.table('utang').insert(utang_data).execute()
@@ -272,9 +280,11 @@ async def get_utang_records(
 
 
 @router.put("/utang/debts/{debt_id}")
+@limiter.limit("60/minute")
 async def update_utang_status(
+    request: Request,
     debt_id: str,
-    request: UtangUpdate,
+    utang_update: UtangUpdate,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
     """Update debt status (mark as paid/unpaid) - Available to all users"""
@@ -282,7 +292,7 @@ async def update_utang_status(
     # No tier check - all authenticated users can update their debts
 
     try:
-        update_res = supabase.table('utang').update({"status": request.status}).eq('id', debt_id).eq('user_id', user_id).execute()
+        update_res = supabase.table('utang').update({"status": utang_update.status}).eq('id', debt_id).eq('user_id', user_id).execute()
         
         if not update_res.data:
             raise HTTPException(status_code=404, detail="Utang record not found or permission denied.")
@@ -458,9 +468,11 @@ async def get_kaban_transactions(
 
 
 @router.put("/kaban/transactions/{transaction_id}")
+@limiter.limit("60/minute")
 async def update_kaban_transaction(
+    request: Request,
     transaction_id: str,
-    request: TransactionUpdate,
+    transaction_update: TransactionUpdate,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
     """Update an existing transaction - Available to all users"""
@@ -470,10 +482,10 @@ async def update_kaban_transaction(
     try:
         # Only update fields that are provided (except sahod_envelope_id which can be explicitly null)
         update_data = {}
-        for k, v in request.model_dump().items():
+        for k, v in transaction_update.model_dump().items():
             if k == 'sahod_envelope_id':
                 # Always include sahod_envelope_id if it's in the request (can be None to unlink)
-                if k in request.model_fields_set:
+                if k in transaction_update.model_fields_set:
                     update_data[k] = v
             elif v is not None:
                 update_data[k] = v
@@ -493,7 +505,9 @@ async def update_kaban_transaction(
 
 
 @router.delete("/kaban/transactions/{transaction_id}")
+@limiter.limit("60/minute")
 async def delete_kaban_transaction(
+    request: Request,
     transaction_id: str,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
@@ -1110,7 +1124,9 @@ async def process_pending_recurring_transactions(user_id: str):
 
 
 @router.post("/kaban/recurring")
+@limiter.limit("30/minute")
 async def create_recurring_rule(
+    request: Request,
     recurring_request: RecurringRuleCreate,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
@@ -1171,16 +1187,18 @@ async def get_recurring_rules(
 
 
 @router.put("/kaban/recurring/{rule_id}")
+@limiter.limit("60/minute")
 async def update_recurring_rule(
+    request: Request,
     rule_id: str,
-    request: RecurringRuleUpdate,
+    recurring_update: RecurringRuleUpdate,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
     """Update a recurring rule - Available to all users"""
     user_id = profile['id']
     
     try:
-        update_data = {k: v for k, v in request.model_dump().items() if v is not None}
+        update_data = {k: v for k, v in recurring_update.model_dump().items() if v is not None}
         
         if not update_data:
             raise HTTPException(status_code=400, detail="No fields to update")
@@ -1202,7 +1220,9 @@ async def update_recurring_rule(
 
 
 @router.delete("/kaban/recurring/{rule_id}")
+@limiter.limit("60/minute")
 async def delete_recurring_rule(
+    request: Request,
     rule_id: str,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):

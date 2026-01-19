@@ -325,7 +325,9 @@ async def get_pay_cycle(
 
 
 @router.put("/pay-cycles/{pay_cycle_id}")
+@limiter.limit("30/minute")
 async def update_pay_cycle(
+    request: Request,
     pay_cycle_id: str,
     pay_cycle: PayCycleUpdate,
     profile: Annotated[dict, Depends(get_user_profile)]
@@ -371,7 +373,9 @@ async def update_pay_cycle(
 
 
 @router.delete("/pay-cycles/{pay_cycle_id}")
+@limiter.limit("30/minute")
 async def delete_pay_cycle(
+    request: Request,
     pay_cycle_id: str,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
@@ -771,7 +775,9 @@ async def get_envelope(
 
 
 @router.put("/envelopes/{envelope_id}")
+@limiter.limit("60/minute")
 async def update_envelope(
+    request: Request,
     envelope_id: str,
     envelope: EnvelopeUpdate,
     profile: Annotated[dict, Depends(get_user_profile)]
@@ -811,7 +817,9 @@ async def update_envelope(
 
 
 @router.delete("/envelopes/{envelope_id}")
+@limiter.limit("60/minute")
 async def delete_envelope(
+    request: Request,
     envelope_id: str,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
@@ -841,7 +849,9 @@ async def delete_envelope(
 
 
 @router.put("/envelopes/reorder")
+@limiter.limit("30/minute")
 async def reorder_envelopes(
+    request: Request,
     reorder: EnvelopeReorder,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
