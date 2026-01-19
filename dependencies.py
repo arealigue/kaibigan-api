@@ -3,7 +3,7 @@ Shared dependencies for Kaibigan API
 """
 import os
 import logging
-from fastapi import Header, HTTPException, status
+from fastapi import Header, HTTPException, status, Request
 from typing import Annotated
 from supabase import create_client, Client
 from slowapi import Limiter
@@ -19,7 +19,29 @@ if not supabase_url or not supabase_key:
 supabase: Client = create_client(supabase_url, supabase_key)
 
 # Initialize Rate Limiter
-limiter = Limiter(key_func=get_remote_address)
+def _truthy_env(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def get_rate_limit_key(request: Request) -> str:
+    """
+    Returns the client key used for rate limiting.
+
+    By default, we do NOT trust forwarded headers (spoofable). For deployments
+    behind a trusted reverse proxy/load balancer (e.g., Render), set
+    TRUST_PROXY_HEADERS=true so we key by the original client IP.
+    """
+    if _truthy_env("TRUST_PROXY_HEADERS"):
+        xff = request.headers.get("x-forwarded-for")
+        if xff:
+            # XFF can be a comma-separated list. First is the original client.
+            client_ip = xff.split(",")[0].strip()
+            if client_ip:
+                return client_ip
+    return get_remote_address(request)
+
+
+limiter = Limiter(key_func=get_rate_limit_key)
 
 
 async def get_user_profile(authorization: Annotated[str | None, Header()] = None):

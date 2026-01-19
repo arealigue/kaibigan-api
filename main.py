@@ -9,6 +9,7 @@ from openai import AsyncOpenAI
 from dotenv import load_dotenv
 from typing import Annotated, List, Optional
 from fastapi.middleware.cors import CORSMiddleware 
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 import datetime
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -32,6 +33,9 @@ app = FastAPI(
     version=API_VERSION
 )
 
+def _truthy_env(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
 ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "https://kaibigan-web.vercel.app",
@@ -47,6 +51,37 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Optional: protect against Host header attacks.
+# Keep this off by default to avoid accidental production breakage when
+# custom domains change. Enable with ENABLE_TRUSTED_HOST=true.
+if _truthy_env("ENABLE_TRUSTED_HOST"):
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=[
+            "localhost",
+            "127.0.0.1",
+            "[::1]",
+            "*.onrender.com",
+        ],
+    )
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+
+    # Basic hardening headers (safe defaults for JSON APIs)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+
+    # Only meaningful over HTTPS; browsers ignore for HTTP.
+    if _truthy_env("ENABLE_HSTS"):
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+
+    return response
 
 # Add rate limiter to app state
 app.state.limiter = limiter
