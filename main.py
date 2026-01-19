@@ -32,15 +32,17 @@ app = FastAPI(
     version=API_VERSION
 )
 
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "https://kaibigan-web.vercel.app",
+    "https://kabanko.app",
+    "https://kaibigan-test-five.vercel.app",
+]
+
 # --- 2. MIDDLEWARE (CORS) ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000", 
-        "https://kaibigan-web.vercel.app",
-        "https://kabanko.app",
-        "https://kaibigan-test-five.vercel.app"
-    ],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -54,7 +56,7 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     response = _rate_limit_exceeded_handler(request, exc)
     # Add CORS headers to rate limit response
     origin = request.headers.get("origin", "")
-    if origin in ["http://localhost:3000", "https://kaibigan-web.vercel.app", "https://kabanko.app"]:
+    if origin in ALLOWED_ORIGINS:
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Access-Control-Allow-Credentials"] = "true"
     return response
@@ -187,11 +189,12 @@ def health_check():
     }
 
 @app.post("/calculate-loan")
-def calculate_loan(request: LoanCalculatorRequest):
+@limiter.limit("60/minute")
+def calculate_loan(request: Request, loan_request: LoanCalculatorRequest):
     try:
-        principal = request.loan_amount
-        annual_rate = request.interest_rate / 100.0
-        loan_term_months = request.loan_term_years * 12
+        principal = loan_request.loan_amount
+        annual_rate = loan_request.interest_rate / 100.0
+        loan_term_months = loan_request.loan_term_years * 12
 
         if loan_term_months == 0:
             return {"monthly_payment": principal, "total_payment": principal, "total_interest": 0, **request.model_dump()}
@@ -211,14 +214,15 @@ def calculate_loan(request: LoanCalculatorRequest):
             "total_payment": round(total_payment, 2),
             "total_interest": round(total_interest, 2),
             "loan_amount": principal,
-            "interest_rate": request.interest_rate,
-            "loan_term_years": request.loan_term_years
+            "interest_rate": loan_request.interest_rate,
+            "loan_term_years": loan_request.loan_term_years
         }
     except Exception as e:
         return {"error": str(e)}
 
 @app.get("/search-assistance")
-def search_assistance(keyword: str = "", category: str = ""):
+@limiter.limit("60/minute")
+def search_assistance(request: Request, keyword: str = "", category: str = ""):
     """
     Search government assistance programs with optional keyword and category filters.
     Both filters work as AND condition when provided.
