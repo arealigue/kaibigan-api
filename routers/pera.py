@@ -1263,6 +1263,52 @@ async def update_recurring_rule(
         raise HTTPException(status_code=500, detail="Failed to update recurring rule")
 
 
+@router.patch("/kaban/recurring/{rule_id}/pause")
+@limiter.limit("60/minute")
+async def toggle_recurring_rule_pause(
+    request: Request,
+    rule_id: str,
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """Toggle pause/resume for a recurring rule - Available to all users"""
+    user_id = profile['id']
+    
+    try:
+        # First, get the current state
+        rule_res = supabase.table('recurring_rules').select('is_active').eq('id', rule_id).eq('user_id', user_id).execute()
+        
+        if not rule_res.data:
+            raise HTTPException(status_code=404, detail="Recurring rule not found or permission denied")
+        
+        current_is_active = rule_res.data[0]['is_active']
+        new_is_active = not current_is_active
+        
+        # Update the is_active status
+        update_res = supabase.table('recurring_rules').update({
+            'is_active': new_is_active,
+            'updated_at': datetime.datetime.now().isoformat()
+        }).eq('id', rule_id).eq('user_id', user_id).execute()
+        
+        if not update_res.data:
+            raise HTTPException(status_code=500, detail="Failed to update rule status")
+        
+        action = "resumed" if new_is_active else "paused"
+        logger.info("[Recurring] Rule %s %s by user %s", rule_id, action, user_id)
+        
+        return {
+            "message": f"Recurring rule {action} successfully",
+            "rule_id": rule_id,
+            "is_active": new_is_active,
+            "action": action
+        }
+        
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("toggle_recurring_rule_pause failed")
+        raise HTTPException(status_code=500, detail="Failed to toggle recurring rule pause status")
+
+
 @router.delete("/kaban/recurring/{rule_id}")
 @limiter.limit("60/minute")
 async def delete_recurring_rule(
