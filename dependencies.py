@@ -2,11 +2,14 @@
 Shared dependencies for Kaibigan API
 """
 import os
+import logging
 from fastapi import Header, HTTPException, status
 from typing import Annotated
 from supabase import create_client, Client
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+
+logger = logging.getLogger(__name__)
 
 # Initialize Supabase client
 supabase_url = os.environ.get("SUPABASE_URL")
@@ -45,5 +48,5 @@ async def get_user_profile(authorization: Annotated[str | None, Header()] = None
         return profile
     
     except Exception as e:
-        print(f"Auth Error: {e}") 
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Authentication error")
+        logger.warning("Auth error during token validation: %s", e.__class__.__name__)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication error")
