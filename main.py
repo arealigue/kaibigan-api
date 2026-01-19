@@ -171,7 +171,7 @@ try:
         GOV_PROGRAMS_DB = json.load(f)
 except FileNotFoundError:
     GOV_PROGRAMS_DB = []
-    print("WARNING: gov_programs.json not found.")
+    logger.warning("gov_programs.json not found; assistance search will return empty results")
 
 # --- 4. REQUEST MODELS (PYDANTIC) ---
 # ... (All your existing models: ChatRequest, MealPlanRequest, etc. No changes.)
@@ -737,7 +737,10 @@ Start with a warm Taglish greeting. End with encouragement.
             ]
         )
         ai_response = chat_completion.choices[0].message.content
-        return {"analysis": ai_response, "prompt_debug": system_prompt}
+        response_payload = {"analysis": ai_response}
+        if _truthy_env("INCLUDE_PROMPT_DEBUG"):
+            response_payload["prompt_debug"] = system_prompt
+        return response_payload
     except Exception as e:
         logger.exception("analyze_loan failed")
         raise HTTPException(status_code=502, detail="AI service temporarily unavailable")
@@ -789,7 +792,10 @@ async def analyze_assistance(
             ]
         )
         ai_response = chat_completion.choices[0].message.content
-        return {"analysis": ai_response, "prompt_debug": system_prompt}
+        response_payload = {"analysis": ai_response}
+        if _truthy_env("INCLUDE_PROMPT_DEBUG"):
+            response_payload["prompt_debug"] = system_prompt
+        return response_payload
     except Exception as e:
         logger.exception("analyze_assistance failed")
         raise HTTPException(status_code=502, detail="AI service temporarily unavailable")
@@ -830,7 +836,7 @@ async def create_recipe_from_notes(
     """
 
     try:
-        print(f"Calling GPT-5-Mini for user {user_id}...")
+        logger.info("recipes/create-from-notes: calling model for user_id=%s", user_id)
         chat_completion = await client.chat.completions.create(
             model="gpt-5-mini",
             response_format={ "type": "json_object" },
@@ -846,17 +852,17 @@ async def create_recipe_from_notes(
         recipe_data['name'] = recipe_request.recipe_name
         recipe_data['original_notes'] = recipe_request.notes
 
-        print(f"Saving recipe '{recipe_request.recipe_name}' to Supabase...")
+        logger.info("recipes/create-from-notes: saving recipe for user_id=%s", user_id)
         insert_res = supabase.table('recipes').insert(recipe_data).execute()
 
         if not insert_res.data:
-             raise HTTPException(status_code=500, detail="Failed to save recipe to database.")
+            raise HTTPException(status_code=500, detail="Failed to save recipe to database.")
 
         return insert_res.data[0] 
 
     except Exception as e:
-        print(f"AI Chef Error: {e}")
-        raise HTTPException(status_code=500, detail=f"AI formatting error: {e}")
+        logger.exception("recipes/create-from-notes failed")
+        raise HTTPException(status_code=502, detail="AI service temporarily unavailable")
 
 
 # --- 7. WEBHOOK ENDPOINT (THE "CASH REGISTER") ---
@@ -869,13 +875,13 @@ async def webhook_lemonsqueezy(request: Request):
         # 1. Get the Secret
         secret = os.environ.get("LEMONSQUEEZY_SIGNING_SECRET")
         if not secret:
-            print("WEBHOOK ERROR: LEMONSQUEEZY_SIGNING_SECRET is not set.")
+            logger.error("webhook-lemonsqueezy: missing signing secret")
             raise HTTPException(status_code=500, detail="Webhook not configured")
             
         # 2. Get the Signature from Headers
         signature = request.headers.get("X-Signature")
         if not signature:
-             raise HTTPException(status_code=400, detail="No signature header")
+            raise HTTPException(status_code=400, detail="No signature header")
 
         # 3. Get the Raw Body (Critical for HMAC)
         payload = await request.body()
@@ -885,7 +891,7 @@ async def webhook_lemonsqueezy(request: Request):
 
         # 5. Secure Compare
         if not hmac.compare_digest(digest, signature):
-            print("WEBHOOK ERROR: Invalid signature")
+            logger.warning("webhook-lemonsqueezy: invalid signature")
             raise HTTPException(status_code=401, detail="Invalid signature")
 
         # 6. Parse JSON
@@ -903,7 +909,7 @@ async def webhook_lemonsqueezy(request: Request):
         
         # CASE A: Subscription Created/Active (Upgrade to PRO)
         if event_name in ["subscription_created", "subscription_updated"] and status_val == "active":
-            print(f"WEBHOOK: Activating PRO for {user_email}")
+            logger.info("webhook-lemonsqueezy: activating PRO (event=%s)", event_name)
             
             # Update to "pro"
             update_data = {"tier": "pro"} 
@@ -915,29 +921,29 @@ async def webhook_lemonsqueezy(request: Request):
 
             # Decrement Promo Logic (Only on creation)
             if event_name == "subscription_created":
-                 try:
-                    promo_res = supabase.table('launch_promo').select('spots_remaining').eq('id', 1).single().execute()
-                    if promo_res.data and promo_res.data['spots_remaining'] > 0:
-                        new_spots = promo_res.data['spots_remaining'] - 1
-                        supabase.table('launch_promo').update({'spots_remaining': new_spots}).eq('id', 1).execute()
-                 except Exception as e:
-                    print(f"PROMO ERROR: {e}")
+                    try:
+                        promo_res = supabase.table('launch_promo').select('spots_remaining').eq('id', 1).single().execute()
+                        if promo_res.data and promo_res.data['spots_remaining'] > 0:
+                            new_spots = promo_res.data['spots_remaining'] - 1
+                            supabase.table('launch_promo').update({'spots_remaining': new_spots}).eq('id', 1).execute()
+                    except Exception:
+                        logger.exception("webhook-lemonsqueezy: promo decrement failed")
 
         # CASE B: Subscription Expired (Downgrade to FREE)
         elif event_name == "subscription_expired":
-             print(f"WEBHOOK: Revoking PRO for {user_email}")
-             
-             # Update to "free"
-             update_data = {"tier": "free"}
-             
-             if user_id:
+            logger.info("webhook-lemonsqueezy: revoking PRO (event=%s)", event_name)
+
+            # Update to "free"
+            update_data = {"tier": "free"}
+
+            if user_id:
                 supabase.table("profiles").update(update_data).eq("id", user_id).execute()
-             else:
+            else:
                 supabase.table("profiles").update(update_data).eq("email", user_email).execute()
 
         return {"status": "success"}
 
     except Exception as e:
-        print(f"WEBHOOK EXCEPTION: {e}")
+        logger.exception("webhook-lemonsqueezy failed")
         raise HTTPException(status_code=500, detail="Webhook processing failed")
 

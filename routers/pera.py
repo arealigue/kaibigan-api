@@ -147,8 +147,8 @@ async def create_ipon_goal(
             
         return insert_res.data[0]
     except Exception as e:
-        print(f"Ipon Goal Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("create_ipon_goal failed")
+        raise HTTPException(status_code=500, detail="Failed to create goal")
 
 
 @router.get("/ipon/goals")
@@ -165,8 +165,8 @@ async def get_ipon_goals(
         goals_res = supabase.table('ipon_goals').select('*').eq('user_id', user_id).order('created_at', desc=True).execute()
         return goals_res.data
     except Exception as e:
-        print(f"Get Goals Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("get_ipon_goals failed")
+        raise HTTPException(status_code=500, detail="Failed to load goals")
 
 
 @router.post("/ipon/transactions")
@@ -197,8 +197,8 @@ async def add_ipon_transaction(
         
         return insert_res.data[0]
     except Exception as e:
-        print(f"Transaction Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("add_ipon_transaction failed")
+        raise HTTPException(status_code=500, detail="Failed to add transaction")
 
 
 @router.get("/ipon/goals/{goal_id}/transactions")
@@ -218,8 +218,8 @@ async def get_goal_transactions(
         tx_res = supabase.table('transactions').select('*').eq('user_id', user_id).eq('goal_id', goal_id).order('created_at', desc=True).execute()
         return tx_res.data
     except Exception as e:
-        print(f"Get Transactions Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("get_goal_transactions failed")
+        raise HTTPException(status_code=500, detail="Failed to load transactions")
 
 
 # --- UTANG TRACKER ENDPOINTS ---
@@ -249,7 +249,7 @@ async def create_utang_record(
         except HTTPException:
             raise
         except Exception as e:
-            print(f"Error checking debt count: {e}")
+            logger.exception("create_utang_record: failed to check debt count")
 
     try:
         utang_data = utang_request.model_dump()
@@ -262,8 +262,8 @@ async def create_utang_record(
             
         return insert_res.data[0]
     except Exception as e:
-        print(f"Utang Create Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("create_utang_record failed")
+        raise HTTPException(status_code=500, detail="Failed to create utang record")
 
 
 @router.get("/utang/debts")
@@ -278,8 +278,8 @@ async def get_utang_records(
         utang_res = supabase.table('utang').select('*').eq('user_id', user_id).eq('status', 'unpaid').order('due_date', desc=False).execute()
         return utang_res.data
     except Exception as e:
-        print(f"Get Utang Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("get_utang_records failed")
+        raise HTTPException(status_code=500, detail="Failed to load utang records")
 
 
 @router.put("/utang/debts/{debt_id}")
@@ -302,8 +302,8 @@ async def update_utang_status(
             
         return update_res.data[0]
     except Exception as e:
-        print(f"Utang Update Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("update_utang_status failed")
+        raise HTTPException(status_code=500, detail="Failed to update utang status")
 
 
 @router.post("/utang/generate-message")
@@ -364,8 +364,8 @@ async def get_kaban_categories(
         categories_res = supabase.table('expense_categories').select('*').or_(f'user_id.is.null,user_id.eq.{user_id}').order('name', desc=False).execute()
         return categories_res.data
     except Exception as e:
-        print(f"Get Categories Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("get_kaban_categories failed")
+        raise HTTPException(status_code=500, detail="Failed to load categories")
 
 
 @router.post("/kaban/categories")
@@ -392,8 +392,8 @@ async def create_custom_category(
             
         return insert_res.data[0]
     except Exception as e:
-        print(f"Create Category Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("create_custom_category failed")
+        raise HTTPException(status_code=500, detail="Failed to create category")
 
 
 @router.post("/kaban/transactions")
@@ -432,8 +432,8 @@ async def create_kaban_transaction(
     except HTTPException:
         raise  # Re-raise HTTP exceptions as-is
     except Exception as e:
-        print(f"Create Transaction Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("create_kaban_transaction failed")
+        raise HTTPException(status_code=500, detail="Failed to create transaction")
 
 
 @router.get("/kaban/transactions")
@@ -467,8 +467,8 @@ async def get_kaban_transactions(
         tx_res = query.order('transaction_date', desc=True).execute()
         return tx_res.data
     except Exception as e:
-        print(f"Get Transactions Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("get_kaban_transactions failed")
+        raise HTTPException(status_code=500, detail="Failed to load transactions")
 
 
 @router.put("/kaban/transactions/{transaction_id}")
@@ -504,8 +504,8 @@ async def update_kaban_transaction(
             
         return update_res.data[0]
     except Exception as e:
-        print(f"Update Transaction Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("update_kaban_transaction failed")
+        raise HTTPException(status_code=500, detail="Failed to update transaction")
 
 
 @router.delete("/kaban/transactions/{transaction_id}")
@@ -527,8 +527,8 @@ async def delete_kaban_transaction(
             
         return {"message": "Transaction deleted successfully", "deleted_id": transaction_id}
     except Exception as e:
-        print(f"Delete Transaction Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("delete_kaban_transaction failed")
+        raise HTTPException(status_code=500, detail="Failed to delete transaction")
 
 
 @router.get("/kaban/summary")
@@ -571,8 +571,8 @@ async def get_kaban_summary(
             "transaction_count": len(tx_res.data)
         }
     except Exception as e:
-        print(f"Get Summary Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("get_kaban_summary failed")
+        raise HTTPException(status_code=500, detail="Failed to load summary")
 
 
 @router.get("/kaban/stats/category")
@@ -631,8 +631,8 @@ async def get_category_stats(
             "total_categories": len(result)
         }
     except Exception as e:
-        print(f"Get Category Stats Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("get_category_stats failed")
+        raise HTTPException(status_code=500, detail="Failed to load category stats")
 
 
 # --- AI FINANCIAL ADVISOR ENDPOINTS ---
@@ -891,8 +891,8 @@ IMPORTANT: Do NOT end with questions like "Sabihin mo kung gusto mo..." or open-
         return {"analysis": ai_response}
     
     except Exception as e:
-        print(f"AI Financial Analysis Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("ai_financial_analysis failed")
+        raise HTTPException(status_code=502, detail="AI service temporarily unavailable")
 
 
 @router.post("/ai/financial-chat")
@@ -992,8 +992,8 @@ FORMATTING:
         return {"response": ai_response}
     
     except Exception as e:
-        print(f"AI Financial Chat Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("ai_financial_chat failed")
+        raise HTTPException(status_code=502, detail="AI service temporarily unavailable")
 
 
 # --- RECURRING INCOME ENDPOINTS ---
@@ -1120,10 +1120,10 @@ async def process_pending_recurring_transactions(user_id: str):
                             'updated_at': datetime.datetime.now().isoformat()
                         }).eq('id', rule_id).execute()
                         
-                        print(f"[Recurring] Auto-posted transaction for rule {rule_id} on {scheduled_date}")
+                        logger.info("[Recurring] Auto-posted transaction for rule %s on %s", rule_id, scheduled_date)
                         
     except Exception as e:
-        print(f"[Recurring] Error processing pending transactions: {e}")
+        logger.exception("[Recurring] Error processing pending transactions")
         # Don't raise - this should not block the main request
 
 
@@ -1170,8 +1170,8 @@ async def create_recurring_rule(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Create Recurring Rule Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("create_recurring_rule failed")
+        raise HTTPException(status_code=500, detail="Failed to create recurring rule")
 
 
 @router.get("/kaban/recurring")
@@ -1186,8 +1186,8 @@ async def get_recurring_rules(
         return rules_res.data
         
     except Exception as e:
-        print(f"Get Recurring Rules Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("get_recurring_rules failed")
+        raise HTTPException(status_code=500, detail="Failed to load recurring rules")
 
 
 @router.put("/kaban/recurring/{rule_id}")
@@ -1219,8 +1219,8 @@ async def update_recurring_rule(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Update Recurring Rule Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("update_recurring_rule failed")
+        raise HTTPException(status_code=500, detail="Failed to update recurring rule")
 
 
 @router.delete("/kaban/recurring/{rule_id}")
@@ -1242,5 +1242,5 @@ async def delete_recurring_rule(
         return {"message": "Recurring rule deleted successfully", "deleted_id": rule_id}
         
     except Exception as e:
-        print(f"Delete Recurring Rule Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("delete_recurring_rule failed")
+        raise HTTPException(status_code=500, detail="Failed to delete recurring rule")

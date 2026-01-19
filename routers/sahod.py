@@ -8,6 +8,9 @@ from typing import Annotated, Optional, List
 from dependencies import get_user_profile, supabase, limiter
 from openai import AsyncOpenAI
 import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 from dateutil.relativedelta import relativedelta
 
 # Initialize OpenAI client
@@ -229,7 +232,7 @@ def process_completed_period_rollover(user_id: str, completed_instance_id: str):
             .execute()
             
     except Exception as e:
-        print(f"Process Rollover Error: {e}")
+        logger.exception("process_rollover_state_update failed")
         # Don't raise - this is a best-effort operation
 
 
@@ -272,8 +275,8 @@ async def create_pay_cycle(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Create Pay Cycle Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("create_pay_cycle failed")
+        raise HTTPException(status_code=500, detail="Failed to create pay cycle")
 
 
 @router.get("/pay-cycles")
@@ -293,8 +296,8 @@ async def get_pay_cycles(
         
         return result.data
     except Exception as e:
-        print(f"Get Pay Cycles Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("get_pay_cycles failed")
+        raise HTTPException(status_code=500, detail="Failed to load pay cycles")
 
 
 @router.get("/pay-cycles/{pay_cycle_id}")
@@ -320,8 +323,8 @@ async def get_pay_cycle(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Get Pay Cycle Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("get_pay_cycle failed")
+        raise HTTPException(status_code=500, detail="Failed to load pay cycle")
 
 
 @router.put("/pay-cycles/{pay_cycle_id}")
@@ -368,8 +371,8 @@ async def update_pay_cycle(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Update Pay Cycle Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("update_pay_cycle failed")
+        raise HTTPException(status_code=500, detail="Failed to update pay cycle")
 
 
 @router.delete("/pay-cycles/{pay_cycle_id}")
@@ -396,8 +399,8 @@ async def delete_pay_cycle(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Delete Pay Cycle Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("delete_pay_cycle failed")
+        raise HTTPException(status_code=500, detail="Failed to delete pay cycle")
 
 
 # ============================================================================
@@ -516,8 +519,8 @@ async def get_current_instance(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Get Current Instance Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("get_current_instance failed")
+        raise HTTPException(status_code=500, detail="Failed to load current instance")
 
 
 @router.get("/instances/pending")
@@ -537,8 +540,8 @@ async def get_pending_instances(
         
         return result.data
     except Exception as e:
-        print(f"Get Pending Instances Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("get_pending_instances failed")
+        raise HTTPException(status_code=500, detail="Failed to load pending instances")
 
 
 @router.post("/instances/{instance_id}/confirm")
@@ -591,8 +594,8 @@ async def confirm_instance(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Confirm Instance Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("confirm_instance failed")
+        raise HTTPException(status_code=500, detail="Failed to confirm instance")
 
 
 @router.get("/instances/history")
@@ -613,8 +616,8 @@ async def get_instance_history(
         
         return result.data
     except Exception as e:
-        print(f"Get Instance History Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("get_instance_history failed")
+        raise HTTPException(status_code=500, detail="Failed to load instance history")
 
 
 # ============================================================================
@@ -675,8 +678,8 @@ async def create_envelope(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Create Envelope Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("create_envelope failed")
+        raise HTTPException(status_code=500, detail="Failed to create envelope")
 
 
 @router.get("/envelopes")
@@ -696,8 +699,8 @@ async def get_envelopes(
         
         return result.data
     except Exception as e:
-        print(f"Get Envelopes Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("get_envelopes failed")
+        raise HTTPException(status_code=500, detail="Failed to load envelopes")
 
 
 @router.get("/envelopes/{envelope_id}")
@@ -770,8 +773,8 @@ async def get_envelope(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Get Envelope Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("get_envelope failed")
+        raise HTTPException(status_code=500, detail="Failed to load envelope")
 
 
 @router.put("/envelopes/{envelope_id}")
@@ -812,8 +815,8 @@ async def update_envelope(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Update Envelope Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("update_envelope failed")
+        raise HTTPException(status_code=500, detail="Failed to update envelope")
 
 
 @router.delete("/envelopes/{envelope_id}")
@@ -844,8 +847,8 @@ async def delete_envelope(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Delete Envelope Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("delete_envelope failed")
+        raise HTTPException(status_code=500, detail="Failed to delete envelope")
 
 
 @router.put("/envelopes/reorder")
@@ -868,8 +871,8 @@ async def reorder_envelopes(
         
         return {"message": "Envelopes reordered"}
     except Exception as e:
-        print(f"Reorder Envelopes Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("reorder_envelopes failed")
+        raise HTTPException(status_code=500, detail="Failed to reorder envelopes")
 
 
 # ============================================================================
@@ -970,8 +973,8 @@ async def fill_allocations(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Fill Allocations Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("fill_allocations failed")
+        raise HTTPException(status_code=500, detail="Failed to fill allocations")
 
 
 @router.get("/allocations/current")
@@ -1028,8 +1031,8 @@ async def get_current_allocations(
         
         return []
     except Exception as e:
-        print(f"Get Current Allocations Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("get_current_allocations failed")
+        raise HTTPException(status_code=500, detail="Failed to load allocations")
 
 
 @router.put("/allocations/{allocation_id}")
@@ -1063,8 +1066,8 @@ async def update_allocation(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Update Allocation Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("update_allocation failed")
+        raise HTTPException(status_code=500, detail="Failed to update allocation")
 
 
 # ============================================================================
@@ -1166,8 +1169,8 @@ async def process_rollover(
         }
     
     except Exception as e:
-        print(f"Process Rollover Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("process_rollover failed")
+        raise HTTPException(status_code=500, detail="Failed to process rollover")
 
 
 @router.post("/envelopes/{envelope_id}/use-cookie-jar")
@@ -1275,8 +1278,8 @@ async def use_from_cookie_jar(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Use Cookie Jar Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("use_from_cookie_jar failed")
+        raise HTTPException(status_code=500, detail="Failed to withdraw from cookie jar")
 
 
 @router.put("/envelopes/{envelope_id}/toggle-rollover")
@@ -1323,8 +1326,8 @@ async def toggle_envelope_rollover(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Toggle Rollover Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("toggle_envelope_rollover failed")
+        raise HTTPException(status_code=500, detail="Failed to toggle rollover")
 
 
 # ============================================================================
@@ -1485,8 +1488,8 @@ async def get_dashboard(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Get Dashboard Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("get_dashboard failed")
+        raise HTTPException(status_code=500, detail="Failed to load dashboard")
 
 
 # ============================================================================
@@ -1692,7 +1695,7 @@ Do NOT ask questions. Just give the insight.
     except HTTPException:
         raise
     except Exception as e:
-        print(f"AI Insights Error: {e}")
+        logger.exception("ai_insights failed")
         # Fallback to rule-based insight if AI fails
         return {
             "insight": "Keep tracking your spending! You're doing great. 💪",
@@ -1839,5 +1842,5 @@ async def export_csv(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"CSV Export Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("export_csv failed")
+        raise HTTPException(status_code=500, detail="Failed to export CSV")
