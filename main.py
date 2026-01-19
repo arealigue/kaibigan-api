@@ -36,11 +36,16 @@ app = FastAPI(
 def _truthy_env(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "y", "on"}
 
-ALLOWED_ORIGINS = [
+DEFAULT_ALLOWED_ORIGINS = [
     "https://kaibigan-web.vercel.app",
     "https://kabanko.app",
     "https://kaibigan-test-five.vercel.app",
 ]
+
+# CORS is a browser protection, not an API firewall.
+# For prod/test separation, set CORS_ALLOWED_ORIGINS as a comma-separated list.
+cors_env = os.environ.get("CORS_ALLOWED_ORIGINS", "").strip()
+ALLOWED_ORIGINS = [o.strip() for o in cors_env.split(",") if o.strip()] if cors_env else DEFAULT_ALLOWED_ORIGINS
 
 # --- 2. MIDDLEWARE (CORS) ---
 app.add_middleware(
