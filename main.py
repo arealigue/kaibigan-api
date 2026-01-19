@@ -56,14 +56,16 @@ app.add_middleware(
 # Keep this off by default to avoid accidental production breakage when
 # custom domains change. Enable with ENABLE_TRUSTED_HOST=true.
 if _truthy_env("ENABLE_TRUSTED_HOST"):
+    trusted_hosts_env = os.environ.get("TRUSTED_HOSTS", "").strip()
+    allowed_hosts = [h.strip() for h in trusted_hosts_env.split(",") if h.strip()] if trusted_hosts_env else [
+        "localhost",
+        "127.0.0.1",
+        "[::1]",
+        "*.onrender.com",
+    ]
     app.add_middleware(
         TrustedHostMiddleware,
-        allowed_hosts=[
-            "localhost",
-            "127.0.0.1",
-            "[::1]",
-            "*.onrender.com",
-        ],
+        allowed_hosts=allowed_hosts,
     )
 
 
