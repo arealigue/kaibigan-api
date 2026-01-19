@@ -4,6 +4,8 @@ import hmac
 import hashlib
 import base64
 import logging
+import time
+import uuid
 from fastapi import FastAPI, Depends, HTTPException, status, Header, Request
 from pydantic import BaseModel
 from openai import AsyncOpenAI
@@ -25,6 +27,12 @@ logger = logging.getLogger(__name__)
 # --- 1. SETUP ---
 load_dotenv()
 client = AsyncOpenAI() 
+
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=LOG_LEVEL,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s"
+)
 
 # Version info
 API_VERSION = "1.0.0"
@@ -92,6 +100,43 @@ async def add_security_headers(request: Request, call_next):
 
     return response
 
+
+@app.middleware("http")
+async def add_request_id_and_log(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    request.state.request_id = request_id
+    start = time.perf_counter()
+
+    try:
+        response = await call_next(request)
+    except Exception:
+        duration_ms = (time.perf_counter() - start) * 1000
+        logger.exception(
+            "request.failed",
+            extra={
+                "request_id": request_id,
+                "method": request.method,
+                "path": request.url.path,
+                "duration_ms": round(duration_ms, 2),
+            },
+        )
+        raise
+
+    duration_ms = (time.perf_counter() - start) * 1000
+    response.headers.setdefault("X-Request-ID", request_id)
+    logger.info(
+        "request.completed",
+        extra={
+            "request_id": request_id,
+            "method": request.method,
+            "path": request.url.path,
+            "status_code": response.status_code,
+            "duration_ms": round(duration_ms, 2),
+        },
+    )
+
+    return response
+
 # Add rate limiter to app state
 app.state.limiter = limiter
 
@@ -103,6 +148,9 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     if origin in ALLOWED_ORIGINS:
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Access-Control-Allow-Credentials"] = "true"
+    request_id = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID")
+    if request_id:
+        response.headers.setdefault("X-Request-ID", request_id)
     return response
 
 app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
@@ -227,6 +275,36 @@ def health_check():
     return {
         "status": "healthy",
         "service": "KabanKo API",
+        "version": API_VERSION,
+        "build_date": BUILD_DATE,
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
+    }
+
+
+@app.get("/health/ready")
+def readiness_check():
+    """
+    Readiness probe. Optionally checks database connectivity when
+    ENABLE_DB_HEALTHCHECK=true is set.
+    """
+    db_status = "skipped"
+    if _truthy_env("ENABLE_DB_HEALTHCHECK"):
+        try:
+            supabase.table("profiles").select("id").limit(1).execute()
+            db_status = "ok"
+        except Exception:
+            db_status = "unavailable"
+            return {
+                "status": "unhealthy",
+                "service": "KabanKo API",
+                "database": db_status,
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
+            }
+
+    return {
+        "status": "ready",
+        "service": "KabanKo API",
+        "database": db_status,
         "version": API_VERSION,
         "build_date": BUILD_DATE,
         "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
