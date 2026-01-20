@@ -1332,3 +1332,207 @@ async def delete_recurring_rule(
     except Exception:
         logger.exception("delete_recurring_rule failed")
         raise HTTPException(status_code=500, detail="Failed to delete recurring rule")
+
+
+# ============================================
+# QUICK ADD SHORTCUTS
+# ============================================
+
+class QuickAddShortcutCreate(BaseModel):
+    emoji: str = "💰"
+    label: str
+    default_amount: float
+    category_id: Optional[str] = None
+
+class QuickAddShortcutUpdate(BaseModel):
+    emoji: Optional[str] = None
+    label: Optional[str] = None
+    default_amount: Optional[float] = None
+    category_id: Optional[str] = None
+
+
+@router.get("/kaban/shortcuts")
+@limiter.limit("60/minute")
+async def get_quick_add_shortcuts(
+    request: Request,
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """Get user's quick-add shortcuts, ordered by usage"""
+    user_id = profile['id']
+    
+    try:
+        result = supabase.table('quick_add_shortcuts') \
+            .select('*, expense_categories(id, name, emoji, type)') \
+            .eq('user_id', user_id) \
+            .order('usage_count', desc=True) \
+            .order('created_at', desc=False) \
+            .execute()
+        
+        return result.data or []
+        
+    except Exception:
+        logger.exception("get_quick_add_shortcuts failed")
+        raise HTTPException(status_code=500, detail="Failed to fetch shortcuts")
+
+
+@router.post("/kaban/shortcuts")
+@limiter.limit("30/minute")
+async def create_quick_add_shortcut(
+    request: Request,
+    shortcut: QuickAddShortcutCreate,
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """Create a new quick-add shortcut (max 12 per user)"""
+    user_id = profile['id']
+    
+    try:
+        # Check current count
+        count_res = supabase.table('quick_add_shortcuts') \
+            .select('id', count='exact') \
+            .eq('user_id', user_id) \
+            .execute()
+        
+        if count_res.count and count_res.count >= 12:
+            raise HTTPException(
+                status_code=400, 
+                detail="Maximum of 12 shortcuts allowed. Delete one to add a new shortcut."
+            )
+        
+        insert_data = {
+            "user_id": user_id,
+            "emoji": shortcut.emoji,
+            "label": shortcut.label,
+            "default_amount": shortcut.default_amount,
+            "category_id": shortcut.category_id,
+            "is_system_default": False,
+            "usage_count": 0
+        }
+        
+        result = supabase.table('quick_add_shortcuts').insert(insert_data).execute()
+        
+        if not result.data:
+            raise HTTPException(status_code=500, detail="Failed to create shortcut")
+        
+        return result.data[0]
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("create_quick_add_shortcut failed")
+        if "Maximum of 12 shortcuts" in str(e):
+            raise HTTPException(status_code=400, detail="Maximum of 12 shortcuts allowed")
+        raise HTTPException(status_code=500, detail="Failed to create shortcut")
+
+
+@router.put("/kaban/shortcuts/{shortcut_id}")
+@limiter.limit("30/minute")
+async def update_quick_add_shortcut(
+    request: Request,
+    shortcut_id: str,
+    shortcut: QuickAddShortcutUpdate,
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """Update a quick-add shortcut"""
+    user_id = profile['id']
+    
+    try:
+        update_data = {}
+        if shortcut.emoji is not None:
+            update_data['emoji'] = shortcut.emoji
+        if shortcut.label is not None:
+            update_data['label'] = shortcut.label
+        if shortcut.default_amount is not None:
+            update_data['default_amount'] = shortcut.default_amount
+        if shortcut.category_id is not None:
+            update_data['category_id'] = shortcut.category_id
+        
+        if not update_data:
+            raise HTTPException(status_code=400, detail="No fields to update")
+        
+        result = supabase.table('quick_add_shortcuts') \
+            .update(update_data) \
+            .eq('id', shortcut_id) \
+            .eq('user_id', user_id) \
+            .execute()
+        
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Shortcut not found or permission denied")
+        
+        return result.data[0]
+        
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("update_quick_add_shortcut failed")
+        raise HTTPException(status_code=500, detail="Failed to update shortcut")
+
+
+@router.delete("/kaban/shortcuts/{shortcut_id}")
+@limiter.limit("30/minute")
+async def delete_quick_add_shortcut(
+    request: Request,
+    shortcut_id: str,
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """Delete a quick-add shortcut"""
+    user_id = profile['id']
+    
+    try:
+        result = supabase.table('quick_add_shortcuts') \
+            .delete() \
+            .eq('id', shortcut_id) \
+            .eq('user_id', user_id) \
+            .execute()
+        
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Shortcut not found or permission denied")
+        
+        return {"message": "Shortcut deleted successfully", "deleted_id": shortcut_id}
+        
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("delete_quick_add_shortcut failed")
+        raise HTTPException(status_code=500, detail="Failed to delete shortcut")
+
+
+@router.post("/kaban/shortcuts/{shortcut_id}/use")
+@limiter.limit("120/minute")
+async def increment_shortcut_usage(
+    request: Request,
+    shortcut_id: str,
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """Increment usage count when a shortcut is used"""
+    user_id = profile['id']
+    
+    try:
+        # Get current usage count
+        current = supabase.table('quick_add_shortcuts') \
+            .select('usage_count') \
+            .eq('id', shortcut_id) \
+            .eq('user_id', user_id) \
+            .single() \
+            .execute()
+        
+        if not current.data:
+            raise HTTPException(status_code=404, detail="Shortcut not found")
+        
+        new_count = (current.data.get('usage_count') or 0) + 1
+        
+        result = supabase.table('quick_add_shortcuts') \
+            .update({
+                'usage_count': new_count,
+                'last_used_at': datetime.datetime.now(datetime.timezone.utc).isoformat()
+            }) \
+            .eq('id', shortcut_id) \
+            .eq('user_id', user_id) \
+            .execute()
+        
+        return {"usage_count": new_count}
+        
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("increment_shortcut_usage failed")
+        raise HTTPException(status_code=500, detail="Failed to update usage count")
