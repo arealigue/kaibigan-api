@@ -1536,3 +1536,196 @@ async def increment_shortcut_usage(
     except Exception:
         logger.exception("increment_shortcut_usage failed")
         raise HTTPException(status_code=500, detail="Failed to update usage count")
+
+
+@router.get("/kaban/shortcuts/{shortcut_id}/suggested-amount")
+@limiter.limit("30/minute")
+async def get_suggested_amount(
+    request: Request,
+    shortcut_id: str,
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """
+    Get AI-suggested amount for a shortcut based on user's spending patterns.
+    Returns suggested amount if user has 5+ similar transactions in last 60 days.
+    """
+    user_id = profile['id']
+    
+    try:
+        # Get the shortcut details
+        shortcut = supabase.table('quick_add_shortcuts') \
+            .select('id, label, category_id, default_amount, suggested_amount, suggestion_dismissed') \
+            .eq('id', shortcut_id) \
+            .eq('user_id', user_id) \
+            .single() \
+            .execute()
+        
+        if not shortcut.data:
+            raise HTTPException(status_code=404, detail="Shortcut not found")
+        
+        shortcut_data = shortcut.data
+        
+        # If suggestion was dismissed, don't recalculate unless significant time passed
+        if shortcut_data.get('suggestion_dismissed'):
+            return {
+                "has_suggestion": False,
+                "current_amount": shortcut_data['default_amount'],
+                "reason": "suggestion_dismissed"
+            }
+        
+        category_id = shortcut_data.get('category_id')
+        label = shortcut_data.get('label', '')
+        current_amount = shortcut_data.get('default_amount', 0)
+        
+        if not category_id:
+            return {
+                "has_suggestion": False,
+                "current_amount": current_amount,
+                "reason": "no_category"
+            }
+        
+        # Calculate suggested amount using database function
+        # First try with label-matching transactions
+        sixty_days_ago = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=60)).isoformat()
+        
+        # Get transactions matching category and optionally label
+        similar_txs = supabase.table('transactions') \
+            .select('amount') \
+            .eq('user_id', user_id) \
+            .eq('category_id', category_id) \
+            .eq('type', 'expense') \
+            .gte('created_at', sixty_days_ago) \
+            .order('created_at', desc=True) \
+            .limit(30) \
+            .execute()
+        
+        transactions = similar_txs.data or []
+        
+        # Filter by label if we have enough
+        label_lower = label.lower()
+        label_matching = [t for t in transactions if t.get('description') and label_lower in t.get('description', '').lower()]
+        
+        if len(label_matching) >= 5:
+            amounts = sorted([t['amount'] for t in label_matching])
+        elif len(transactions) >= 5:
+            amounts = sorted([t['amount'] for t in transactions])
+        else:
+            return {
+                "has_suggestion": False,
+                "current_amount": current_amount,
+                "reason": "insufficient_data",
+                "transaction_count": len(transactions)
+            }
+        
+        # Calculate median
+        mid = len(amounts) // 2
+        if len(amounts) % 2 == 0:
+            median = (amounts[mid - 1] + amounts[mid]) / 2
+        else:
+            median = amounts[mid]
+        
+        # Round to nearest 5
+        suggested = round(median / 5) * 5
+        
+        # Only suggest if difference is significant (>10%)
+        diff_percent = abs(suggested - current_amount) / current_amount if current_amount > 0 else 1
+        
+        if diff_percent < 0.10:
+            return {
+                "has_suggestion": False,
+                "current_amount": current_amount,
+                "reason": "no_significant_difference"
+            }
+        
+        # Update the suggested amount in database
+        supabase.table('quick_add_shortcuts') \
+            .update({
+                'suggested_amount': suggested,
+                'suggestion_shown_at': datetime.datetime.now(datetime.timezone.utc).isoformat()
+            }) \
+            .eq('id', shortcut_id) \
+            .eq('user_id', user_id) \
+            .execute()
+        
+        return {
+            "has_suggestion": True,
+            "current_amount": current_amount,
+            "suggested_amount": suggested,
+            "based_on_transactions": len(label_matching) if len(label_matching) >= 5 else len(transactions),
+            "diff_percent": round(diff_percent * 100, 1)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("get_suggested_amount failed")
+        raise HTTPException(status_code=500, detail="Failed to calculate suggested amount")
+
+
+class AcceptSuggestionRequest(BaseModel):
+    accept: bool  # True to accept, False to dismiss
+
+
+@router.post("/kaban/shortcuts/{shortcut_id}/suggested-amount")
+@limiter.limit("30/minute")
+async def respond_to_suggestion(
+    request: Request,
+    shortcut_id: str,
+    body: AcceptSuggestionRequest,
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """Accept or dismiss a suggested amount for a shortcut"""
+    user_id = profile['id']
+    
+    try:
+        # Get current shortcut
+        shortcut = supabase.table('quick_add_shortcuts') \
+            .select('id, default_amount, suggested_amount') \
+            .eq('id', shortcut_id) \
+            .eq('user_id', user_id) \
+            .single() \
+            .execute()
+        
+        if not shortcut.data:
+            raise HTTPException(status_code=404, detail="Shortcut not found")
+        
+        shortcut_data = shortcut.data
+        suggested = shortcut_data.get('suggested_amount')
+        
+        if body.accept and suggested:
+            # Accept: update default_amount to suggested
+            result = supabase.table('quick_add_shortcuts') \
+                .update({
+                    'default_amount': suggested,
+                    'suggested_amount': None,
+                    'suggestion_dismissed': False
+                }) \
+                .eq('id', shortcut_id) \
+                .eq('user_id', user_id) \
+                .execute()
+            
+            return {
+                "message": "Amount updated successfully",
+                "new_amount": suggested
+            }
+        else:
+            # Dismiss: mark as dismissed
+            result = supabase.table('quick_add_shortcuts') \
+                .update({
+                    'suggestion_dismissed': True,
+                    'suggested_amount': None
+                }) \
+                .eq('id', shortcut_id) \
+                .eq('user_id', user_id) \
+                .execute()
+            
+            return {
+                "message": "Suggestion dismissed",
+                "current_amount": shortcut_data.get('default_amount')
+            }
+        
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("respond_to_suggestion failed")
+        raise HTTPException(status_code=500, detail="Failed to process suggestion response")
