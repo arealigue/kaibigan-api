@@ -1586,16 +1586,16 @@ async def get_suggested_amount(
         
         # Calculate suggested amount using database function
         # First try with label-matching transactions
-        sixty_days_ago = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=60)).isoformat()
+        sixty_days_ago = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=60)).date().isoformat()
         
         # Get transactions matching category and optionally label
-        similar_txs = supabase.table('transactions') \
-            .select('amount') \
+        similar_txs = supabase.table('kaban_transactions') \
+            .select('amount, description') \
             .eq('user_id', user_id) \
             .eq('category_id', category_id) \
-            .eq('type', 'expense') \
-            .gte('created_at', sixty_days_ago) \
-            .order('created_at', desc=True) \
+            .eq('transaction_type', 'expense') \
+            .gte('transaction_date', sixty_days_ago) \
+            .order('transaction_date', desc=True) \
             .limit(30) \
             .execute()
         

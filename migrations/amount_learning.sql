@@ -32,13 +32,13 @@ BEGIN
   -- First try to find transactions with similar description/label
   WITH similar_transactions AS (
     SELECT amount
-    FROM transactions
+    FROM kaban_transactions
     WHERE user_id = p_user_id
       AND category_id = p_category_id
-      AND type = 'expense'
+      AND transaction_type = 'expense'
       AND LOWER(description) LIKE '%' || LOWER(p_label) || '%'
-      AND created_at > NOW() - INTERVAL '60 days'
-    ORDER BY created_at DESC
+      AND transaction_date > CURRENT_DATE - INTERVAL '60 days'
+    ORDER BY transaction_date DESC
     LIMIT 30
   )
   SELECT COUNT(*) INTO v_similar_count FROM similar_transactions;
@@ -47,13 +47,13 @@ BEGIN
   IF v_similar_count >= p_min_transactions THEN
     WITH similar_transactions AS (
       SELECT amount
-      FROM transactions
+      FROM kaban_transactions
       WHERE user_id = p_user_id
         AND category_id = p_category_id
-        AND type = 'expense'
+        AND transaction_type = 'expense'
         AND LOWER(description) LIKE '%' || LOWER(p_label) || '%'
-        AND created_at > NOW() - INTERVAL '60 days'
-      ORDER BY created_at DESC
+        AND transaction_date > CURRENT_DATE - INTERVAL '60 days'
+      ORDER BY transaction_date DESC
       LIMIT 30
     )
     SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY amount)
@@ -67,12 +67,12 @@ BEGIN
   -- Otherwise, try category-level median
   WITH category_transactions AS (
     SELECT amount
-    FROM transactions
+    FROM kaban_transactions
     WHERE user_id = p_user_id
       AND category_id = p_category_id
-      AND type = 'expense'
-      AND created_at > NOW() - INTERVAL '60 days'
-    ORDER BY created_at DESC
+      AND transaction_type = 'expense'
+      AND transaction_date > CURRENT_DATE - INTERVAL '60 days'
+    ORDER BY transaction_date DESC
     LIMIT 30
   )
   SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY amount)
