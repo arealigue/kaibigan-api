@@ -1496,6 +1496,141 @@ async def delete_quick_add_shortcut(
         raise HTTPException(status_code=500, detail="Failed to delete shortcut")
 
 
+@router.get("/kaban/shortcuts/auto-suggestions")
+@limiter.limit("30/minute")
+async def get_auto_shortcut_suggestions(
+    request: Request,
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """
+    Analyze user's frequent expense patterns and suggest new shortcuts.
+    Returns top 3 frequent expense descriptions that don't have shortcuts yet.
+    """
+    user_id = profile['id']
+    
+    try:
+        # Get existing shortcuts for this user
+        existing = supabase.table('quick_add_shortcuts') \
+            .select('label') \
+            .eq('user_id', user_id) \
+            .execute()
+        
+        existing_labels = set(
+            s.get('label', '').lower() 
+            for s in (existing.data or [])
+        )
+        
+        # Count how many shortcuts user already has
+        shortcut_count = len(existing.data or [])
+        
+        # If user has max shortcuts, don't suggest more
+        if shortcut_count >= 12:
+            return {"suggestions": [], "reason": "max_shortcuts_reached"}
+        
+        # Get frequent expenses from last 60 days without shortcuts
+        sixty_days_ago = (
+            datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=60)
+        ).date().isoformat()
+        
+        # Query frequent expense patterns
+        # Group by description and category to find patterns
+        transactions = supabase.table('kaban_transactions') \
+            .select('description, category_id, amount, expense_categories(id, name, emoji)') \
+            .eq('user_id', user_id) \
+            .eq('transaction_type', 'expense') \
+            .gte('transaction_date', sixty_days_ago) \
+            .not_.is_('description', 'null') \
+            .order('transaction_date', desc=True) \
+            .limit(500) \
+            .execute()
+        
+        if not transactions.data:
+            return {"suggestions": [], "reason": "no_transactions"}
+        
+        # Aggregate by description (case-insensitive)
+        from collections import defaultdict
+        patterns = defaultdict(lambda: {
+            'count': 0, 
+            'total_amount': 0, 
+            'amounts': [],
+            'category_id': None,
+            'category_name': None,
+            'category_emoji': None
+        })
+        
+        for tx in transactions.data:
+            desc = (tx.get('description') or '').strip()
+            if not desc or len(desc) < 2:
+                continue
+                
+            # Normalize description for grouping
+            desc_key = desc.lower()
+            
+            # Skip if already has a shortcut with similar label
+            if any(existing_label in desc_key or desc_key in existing_label 
+                   for existing_label in existing_labels if existing_label):
+                continue
+            
+            patterns[desc_key]['count'] += 1
+            patterns[desc_key]['total_amount'] += tx.get('amount', 0)
+            patterns[desc_key]['amounts'].append(tx.get('amount', 0))
+            patterns[desc_key]['original_desc'] = desc  # Keep original casing
+            
+            # Store category info from first occurrence
+            if patterns[desc_key]['category_id'] is None:
+                patterns[desc_key]['category_id'] = tx.get('category_id')
+                cat = tx.get('expense_categories')
+                if cat:
+                    patterns[desc_key]['category_name'] = cat.get('name')
+                    patterns[desc_key]['category_emoji'] = cat.get('emoji')
+        
+        # Filter patterns with at least 3 occurrences and sort by count
+        frequent = [
+            (desc, data) for desc, data in patterns.items() 
+            if data['count'] >= 3
+        ]
+        frequent.sort(key=lambda x: x[1]['count'], reverse=True)
+        
+        # Build suggestions (top 3)
+        suggestions = []
+        for desc_key, data in frequent[:3]:
+            # Calculate median amount
+            amounts = sorted(data['amounts'])
+            mid = len(amounts) // 2
+            if len(amounts) % 2 == 0:
+                median = (amounts[mid - 1] + amounts[mid]) / 2
+            else:
+                median = amounts[mid]
+            
+            # Round to nearest 5
+            suggested_amount = round(median / 5) * 5
+            if suggested_amount < 5:
+                suggested_amount = 5
+            
+            # Suggest emoji based on category or generic
+            emoji = data.get('category_emoji') or '💸'
+            
+            suggestions.append({
+                "label": data['original_desc'],
+                "suggested_amount": suggested_amount,
+                "emoji": emoji,
+                "category_id": data['category_id'],
+                "category_name": data.get('category_name') or 'Other',
+                "frequency": data['count'],
+                "frequency_text": f"Used {data['count']} times"
+            })
+        
+        return {
+            "suggestions": suggestions,
+            "current_shortcut_count": shortcut_count,
+            "max_shortcuts": 12
+        }
+        
+    except Exception:
+        logger.exception("get_auto_shortcut_suggestions failed")
+        raise HTTPException(status_code=500, detail="Failed to analyze patterns")
+
+
 @router.post("/kaban/shortcuts/{shortcut_id}/use")
 @limiter.limit("120/minute")
 async def increment_shortcut_usage(
