@@ -1631,6 +1631,145 @@ async def get_auto_shortcut_suggestions(
         raise HTTPException(status_code=500, detail="Failed to analyze patterns")
 
 
+@router.get("/kaban/shortcuts/time-based-order")
+@limiter.limit("60/minute")
+async def get_time_based_shortcut_order(
+    request: Request,
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """
+    Get shortcut IDs ordered by time-of-day relevance.
+    Analyzes when each shortcut is typically used and returns them
+    sorted by relevance to the current hour.
+    
+    Time slots:
+    - Morning (6-10): Breakfast, coffee, commute
+    - Lunch (11-14): Meals
+    - Afternoon (14-17): Snacks, meryenda
+    - Evening (17-21): Dinner, groceries
+    - Night (21-6): Late night, entertainment
+    """
+    user_id = profile['id']
+    
+    try:
+        # Get user's shortcuts
+        shortcuts = supabase.table('quick_add_shortcuts') \
+            .select('id, label') \
+            .eq('user_id', user_id) \
+            .execute()
+        
+        if not shortcuts.data:
+            return {"ordered_ids": [], "current_slot": "unknown"}
+        
+        shortcut_ids = [s['id'] for s in shortcuts.data]
+        
+        # Get current hour (Philippine Time, UTC+8)
+        import pytz
+        ph_tz = pytz.timezone('Asia/Manila')
+        current_hour = datetime.datetime.now(ph_tz).hour
+        
+        # Define time slot
+        if 6 <= current_hour < 11:
+            time_slot = "morning"
+            slot_hours = list(range(6, 11))
+        elif 11 <= current_hour < 14:
+            time_slot = "lunch"
+            slot_hours = list(range(11, 14))
+        elif 14 <= current_hour < 17:
+            time_slot = "afternoon"
+            slot_hours = list(range(14, 17))
+        elif 17 <= current_hour < 21:
+            time_slot = "evening"
+            slot_hours = list(range(17, 21))
+        else:
+            time_slot = "night"
+            slot_hours = list(range(21, 24)) + list(range(0, 6))
+        
+        # Query transactions with timestamps to analyze usage patterns
+        # Get last 60 days of transactions linked to shortcuts
+        sixty_days_ago = (
+            datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=60)
+        ).date().isoformat()
+        
+        transactions = supabase.table('kaban_transactions') \
+            .select('shortcut_id, created_at') \
+            .eq('user_id', user_id) \
+            .eq('transaction_type', 'expense') \
+            .not_.is_('shortcut_id', 'null') \
+            .gte('transaction_date', sixty_days_ago) \
+            .execute()
+        
+        if not transactions.data:
+            # No transaction data, return default order (by usage)
+            return {
+                "ordered_ids": shortcut_ids,
+                "current_slot": time_slot,
+                "reason": "no_transaction_data"
+            }
+        
+        # Count usage per shortcut per time slot
+        from collections import defaultdict
+        slot_usage = defaultdict(lambda: defaultdict(int))
+        
+        for tx in transactions.data:
+            shortcut_id = tx.get('shortcut_id')
+            created_at = tx.get('created_at')
+            
+            if not shortcut_id or not created_at:
+                continue
+            
+            # Parse timestamp and get hour
+            try:
+                # created_at is typically ISO format
+                tx_time = datetime.datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                tx_hour = tx_time.astimezone(ph_tz).hour
+                
+                # Determine which slot this transaction belongs to
+                if 6 <= tx_hour < 11:
+                    tx_slot = "morning"
+                elif 11 <= tx_hour < 14:
+                    tx_slot = "lunch"
+                elif 14 <= tx_hour < 17:
+                    tx_slot = "afternoon"
+                elif 17 <= tx_hour < 21:
+                    tx_slot = "evening"
+                else:
+                    tx_slot = "night"
+                
+                slot_usage[shortcut_id][tx_slot] += 1
+            except (ValueError, AttributeError):
+                continue
+        
+        # Score each shortcut based on current time slot usage
+        scores = []
+        for shortcut_id in shortcut_ids:
+            usage_in_slot = slot_usage[shortcut_id].get(time_slot, 0)
+            total_usage = sum(slot_usage[shortcut_id].values())
+            
+            # Score = usage in current slot + small bonus for overall usage
+            score = (usage_in_slot * 10) + (total_usage * 0.1)
+            scores.append((shortcut_id, score, usage_in_slot))
+        
+        # Sort by score (highest first)
+        scores.sort(key=lambda x: x[1], reverse=True)
+        
+        ordered_ids = [s[0] for s in scores]
+        
+        return {
+            "ordered_ids": ordered_ids,
+            "current_slot": time_slot,
+            "current_hour": current_hour,
+            "slot_data": {
+                s[0]: {"slot_usage": s[2], "score": round(s[1], 1)}
+                for s in scores[:5]  # Return top 5 for debugging
+            }
+        }
+        
+    except Exception:
+        logger.exception("get_time_based_shortcut_order failed")
+        raise HTTPException(status_code=500, detail="Failed to get time-based order")
+
+
 @router.post("/kaban/shortcuts/{shortcut_id}/use")
 @limiter.limit("120/minute")
 async def increment_shortcut_usage(
