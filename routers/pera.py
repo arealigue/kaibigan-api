@@ -108,10 +108,11 @@ class AIFinancialChatRequest(BaseModel):
 class RecurringRuleCreate(BaseModel):
     amount: float
     description: Optional[str] = None
-    category_id: str
+    category_id: Optional[str] = None  # Made optional - envelope is primary link
     transaction_type: str = "income"  # "income" or "expense"
     frequency: str  # "monthly", "bimonthly", "weekly"
     schedule_day: int  # Day of month (1-31) or day of week (0-6)
+    sahod_envelope_id: Optional[str] = None  # Link to Sahod envelope
 
 class RecurringRuleUpdate(BaseModel):
     amount: Optional[float] = None
@@ -120,6 +121,7 @@ class RecurringRuleUpdate(BaseModel):
     frequency: Optional[str] = None
     schedule_day: Optional[int] = None
     is_active: Optional[bool] = None
+    sahod_envelope_id: Optional[str] = None  # Link to Sahod envelope
 
 # --- IPON TRACKER ENDPOINTS ---
 
@@ -1180,13 +1182,17 @@ async def create_recurring_rule(
         raise HTTPException(status_code=400, detail="For weekly frequency, schedule_day must be 0-6 (0=Monday, 6=Sunday)")
     
     try:
-        # Verify category exists
-        category_res = supabase.table('expense_categories').select('id').or_(f'user_id.is.null,user_id.eq.{user_id}').eq('id', recurring_request.category_id).execute()
-        if not category_res.data:
-            raise HTTPException(status_code=404, detail="Category not found")
+        # Verify category exists (only if provided)
+        if recurring_request.category_id:
+            category_res = supabase.table('expense_categories').select('id').or_(f'user_id.is.null,user_id.eq.{user_id}').eq('id', recurring_request.category_id).execute()
+            if not category_res.data:
+                raise HTTPException(status_code=404, detail="Category not found")
         
-        # Check for duplicate rule (same amount, description, category, frequency, schedule_day)
-        existing_res = supabase.table('recurring_rules').select('id').eq('user_id', user_id).eq('amount', recurring_request.amount).eq('category_id', recurring_request.category_id).eq('frequency', recurring_request.frequency).eq('schedule_day', recurring_request.schedule_day).eq('is_active', True).execute()
+        # Check for duplicate rule (same amount, description, frequency, schedule_day)
+        existing_query = supabase.table('recurring_rules').select('id').eq('user_id', user_id).eq('amount', recurring_request.amount).eq('frequency', recurring_request.frequency).eq('schedule_day', recurring_request.schedule_day).eq('is_active', True)
+        if recurring_request.category_id:
+            existing_query = existing_query.eq('category_id', recurring_request.category_id)
+        existing_res = existing_query.execute()
         
         if existing_res.data and len(existing_res.data) > 0:
             raise HTTPException(status_code=400, detail="A similar recurring rule already exists. Delete the existing rule first or use different settings.")
@@ -1343,12 +1349,14 @@ class QuickAddShortcutCreate(BaseModel):
     label: str
     default_amount: float
     category_id: Optional[str] = None
+    sahod_envelope_id: Optional[str] = None  # Link to Sahod envelope
 
 class QuickAddShortcutUpdate(BaseModel):
     emoji: Optional[str] = None
     label: Optional[str] = None
     default_amount: Optional[float] = None
     category_id: Optional[str] = None
+    sahod_envelope_id: Optional[str] = None  # Link to Sahod envelope
 
 
 @router.get("/kaban/shortcuts")
@@ -1404,6 +1412,7 @@ async def create_quick_add_shortcut(
             "label": shortcut.label,
             "default_amount": shortcut.default_amount,
             "category_id": shortcut.category_id,
+            "sahod_envelope_id": shortcut.sahod_envelope_id,
             "is_system_default": False,
             "usage_count": 0
         }
