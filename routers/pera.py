@@ -1394,6 +1394,17 @@ async def create_quick_add_shortcut(
     user_id = profile['id']
     
     try:
+        # Check for duplicate label (case-insensitive)
+        existing_res = supabase.table('quick_add_shortcuts') \
+            .select('id, label') \
+            .eq('user_id', user_id) \
+            .ilike('label', shortcut.label) \
+            .execute()
+        
+        if existing_res.data and len(existing_res.data) > 0:
+            # Return existing shortcut instead of creating duplicate
+            return existing_res.data[0]
+        
         # Check current count
         count_res = supabase.table('quick_add_shortcuts') \
             .select('id', count='exact') \
