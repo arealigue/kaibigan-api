@@ -556,13 +556,16 @@ async def confirm_instance(
     confirm_request: ConfirmInstanceRequest,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
-    """Confirm sahod received (Tap to Fund step 1)."""
+    """Confirm sahod received (Tap to Fund step 1).
+    
+    This also creates an income transaction in Kaban to link the plan with actual money.
+    """
     user_id = profile['id']
     
     try:
-        # Get instance
+        # Get instance with pay cycle info
         instance_res = supabase.table('sahod_pay_cycle_instances') \
-            .select('*') \
+            .select('*, sahod_pay_cycles(cycle_name)') \
             .eq('id', instance_id) \
             .eq('user_id', user_id) \
             .single() \
@@ -573,16 +576,16 @@ async def confirm_instance(
         
         instance = instance_res.data
         
+        # Determine actual amount
+        actual_amount = confirm_request.actual_amount if confirm_request.actual_amount is not None else instance['expected_amount']
+        
+        # Update instance as confirmed
         update_data = {
             'is_assumed': False,
             'confirmed_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            'updated_at': datetime.datetime.now(datetime.timezone.utc).isoformat()
+            'updated_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            'actual_amount': actual_amount
         }
-        
-        if confirm_request.actual_amount is not None:
-            update_data['actual_amount'] = confirm_request.actual_amount
-        else:
-            update_data['actual_amount'] = instance['expected_amount']
         
         result = supabase.table('sahod_pay_cycle_instances') \
             .update(update_data) \
@@ -592,6 +595,61 @@ async def confirm_instance(
         
         if not result.data:
             raise HTTPException(status_code=500, detail="Failed to confirm instance")
+        
+        # === CREATE INCOME TRANSACTION IN KABAN ===
+        # This links the Sahod Plan with actual money in Kaban ledger
+        try:
+            # Get or find a "Salary" income category
+            salary_category = supabase.table('expense_categories') \
+                .select('id') \
+                .or_(f'user_id.is.null,user_id.eq.{user_id}') \
+                .eq('type', 'income') \
+                .ilike('name', '%salary%') \
+                .limit(1) \
+                .execute()
+            
+            # If no salary category, try to find any income category
+            if not salary_category.data:
+                salary_category = supabase.table('expense_categories') \
+                    .select('id') \
+                    .or_(f'user_id.is.null,user_id.eq.{user_id}') \
+                    .eq('type', 'income') \
+                    .limit(1) \
+                    .execute()
+            
+            category_id = salary_category.data[0]['id'] if salary_category.data else None
+            
+            # Build description
+            cycle_name = instance.get('sahod_pay_cycles', {}).get('cycle_name', 'Salary')
+            period_start = instance.get('period_start', '')
+            
+            # Check if income transaction already exists for this instance (prevent duplicates)
+            existing_tx = supabase.table('kaban_transactions') \
+                .select('id') \
+                .eq('user_id', user_id) \
+                .eq('sahod_instance_id', instance_id) \
+                .eq('transaction_type', 'income') \
+                .limit(1) \
+                .execute()
+            
+            if not existing_tx.data:
+                # Create the income transaction
+                tx_data = {
+                    'user_id': user_id,
+                    'transaction_type': 'income',
+                    'amount': actual_amount,
+                    'description': f'{cycle_name} - {period_start}',
+                    'category_id': category_id,
+                    'transaction_date': datetime.date.today().isoformat(),
+                    'source': 'sahod_confirm',
+                    'sahod_instance_id': instance_id  # Link to the pay cycle instance
+                }
+                
+                supabase.table('kaban_transactions').insert(tx_data).execute()
+                logger.info(f"Created income transaction for confirmed sahod instance {instance_id}")
+        except Exception as tx_error:
+            # Log but don't fail - the confirmation itself succeeded
+            logger.warning(f"Failed to create income transaction for instance {instance_id}: {tx_error}")
         
         return result.data[0]
     
