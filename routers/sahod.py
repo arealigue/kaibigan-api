@@ -654,7 +654,7 @@ async def confirm_instance(
                     'description': description,
                     'category_id': category_id,
                     'transaction_date': datetime.date.today().isoformat(),
-                    'source': 'sahod_confirm',
+                    'source': 'manual',  # Use 'manual' since constraint doesn't include 'sahod_confirm'
                 }
                 
                 # Try to include sahod_instance_id if column exists
