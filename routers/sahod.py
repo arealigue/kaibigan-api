@@ -622,30 +622,53 @@ async def confirm_instance(
             # Build description
             cycle_name = instance.get('sahod_pay_cycles', {}).get('cycle_name', 'Salary')
             period_start = instance.get('period_start', '')
+            description = f'{cycle_name} - {period_start}'
             
             # Check if income transaction already exists for this instance (prevent duplicates)
-            existing_tx = supabase.table('kaban_transactions') \
-                .select('id') \
-                .eq('user_id', user_id) \
-                .eq('sahod_instance_id', instance_id) \
-                .eq('transaction_type', 'income') \
-                .limit(1) \
-                .execute()
+            # Try using sahod_instance_id first, fallback to description match
+            try:
+                existing_tx = supabase.table('kaban_transactions') \
+                    .select('id') \
+                    .eq('user_id', user_id) \
+                    .eq('sahod_instance_id', instance_id) \
+                    .eq('transaction_type', 'income') \
+                    .limit(1) \
+                    .execute()
+            except Exception:
+                # sahod_instance_id column might not exist - check by description instead
+                existing_tx = supabase.table('kaban_transactions') \
+                    .select('id') \
+                    .eq('user_id', user_id) \
+                    .eq('description', description) \
+                    .eq('transaction_type', 'income') \
+                    .eq('amount', actual_amount) \
+                    .limit(1) \
+                    .execute()
             
             if not existing_tx.data:
-                # Create the income transaction
+                # Create the income transaction - try with sahod_instance_id first
                 tx_data = {
                     'user_id': user_id,
                     'transaction_type': 'income',
                     'amount': actual_amount,
-                    'description': f'{cycle_name} - {period_start}',
+                    'description': description,
                     'category_id': category_id,
                     'transaction_date': datetime.date.today().isoformat(),
                     'source': 'sahod_confirm',
-                    'sahod_instance_id': instance_id  # Link to the pay cycle instance
                 }
                 
-                supabase.table('kaban_transactions').insert(tx_data).execute()
+                # Try to include sahod_instance_id if column exists
+                try:
+                    tx_data['sahod_instance_id'] = instance_id
+                    supabase.table('kaban_transactions').insert(tx_data).execute()
+                except Exception as insert_error:
+                    # If sahod_instance_id column doesn't exist, insert without it
+                    if 'sahod_instance_id' in str(insert_error):
+                        del tx_data['sahod_instance_id']
+                        supabase.table('kaban_transactions').insert(tx_data).execute()
+                    else:
+                        raise insert_error
+                        
                 logger.info(f"Created income transaction for confirmed sahod instance {instance_id}")
         except Exception as tx_error:
             # Log but don't fail - the confirmation itself succeeded
