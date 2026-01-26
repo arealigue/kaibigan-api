@@ -915,10 +915,59 @@ async def delete_envelope(
     envelope_id: str,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
-    """Soft delete an envelope."""
+    """
+    Soft delete an envelope.
+    
+    CONSTRAINTS (after period is confirmed/locked):
+    1. Cannot delete if envelope has any spent amount
+    2. Cannot delete if envelope has any allocated amount
+    """
     user_id = profile['id']
     
     try:
+        # Get envelope with name for error message
+        envelope_res = supabase.table('sahod_envelopes') \
+            .select('id, name') \
+            .eq('id', envelope_id) \
+            .eq('user_id', user_id) \
+            .single() \
+            .execute()
+        
+        if not envelope_res.data:
+            raise HTTPException(status_code=404, detail="Envelope not found")
+        
+        envelope_name = envelope_res.data.get('name', 'this envelope')
+        
+        # Check for current period allocation
+        # Get current period's allocation for this envelope
+        current_alloc = supabase.table('sahod_allocations') \
+            .select('allocated_amount, cached_spent') \
+            .eq('envelope_id', envelope_id) \
+            .eq('user_id', user_id) \
+            .order('created_at', desc=True) \
+            .limit(1) \
+            .execute()
+        
+        if current_alloc.data:
+            alloc = current_alloc.data[0]
+            spent_amount = alloc.get('cached_spent', 0) or 0
+            allocated_amount = alloc.get('allocated_amount', 0) or 0
+            
+            # Rule 1: Cannot delete if has spent
+            if spent_amount > 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Cannot remove '{envelope_name}' - has ₱{spent_amount:,.2f} spent"
+                )
+            
+            # Rule 2: Cannot delete if has allocation
+            if allocated_amount > 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Cannot remove '{envelope_name}' - has ₱{allocated_amount:,.2f} allocated"
+                )
+        
+        # Safe to soft delete
         result = supabase.table('sahod_envelopes') \
             .update({
                 'is_active': False, 
@@ -1132,7 +1181,13 @@ async def update_allocation(
     allocation: AllocationUpdate,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
-    """Update a single allocation."""
+    """
+    Update a single allocation.
+    
+    CONSTRAINTS (after period is confirmed/locked):
+    1. new_amount >= spent_amount (cannot reduce below already spent)
+    2. Total allocations must equal total income
+    """
     user_id = profile['id']
     
     try:
@@ -1140,6 +1195,34 @@ async def update_allocation(
         
         if not update_data:
             raise HTTPException(status_code=400, detail="No fields to update")
+        
+        # Get current allocation with envelope and instance info
+        current_alloc = supabase.table('sahod_allocations') \
+            .select('*, sahod_envelopes(name), sahod_pay_cycle_instances(confirmed_at, actual_amount, expected_amount)') \
+            .eq('id', allocation_id) \
+            .eq('user_id', user_id) \
+            .single() \
+            .execute()
+        
+        if not current_alloc.data:
+            raise HTTPException(status_code=404, detail="Allocation not found")
+        
+        alloc_data = current_alloc.data
+        instance = alloc_data.get('sahod_pay_cycle_instances', {})
+        is_locked = instance.get('confirmed_at') is not None
+        
+        # VALIDATION: If period is locked and updating allocated_amount
+        if is_locked and 'allocated_amount' in update_data:
+            new_amount = update_data['allocated_amount']
+            spent_amount = alloc_data.get('cached_spent', 0) or 0
+            envelope_name = alloc_data.get('sahod_envelopes', {}).get('name', 'this envelope')
+            
+            # Rule 1: Cannot go below spent amount
+            if new_amount < spent_amount:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Cannot set below ₱{spent_amount:,.2f} (already spent in {envelope_name})"
+                )
         
         result = supabase.table('sahod_allocations') \
             .update(update_data) \
@@ -1539,6 +1622,7 @@ async def get_dashboard(
         
         # Determine instance state for UI
         needs_confirmation = instance.get('is_assumed', True)
+        is_locked = instance.get('confirmed_at') is not None  # Locked after income confirmation
         
         return {
             "needs_setup": False,
@@ -1552,7 +1636,8 @@ async def get_dashboard(
                 "is_assumed": instance.get('is_assumed', True),
                 "confirmed_at": instance.get('confirmed_at'),
                 "auto_confirmed_at": instance.get('auto_confirmed_at'),
-                "needs_confirmation": needs_confirmation
+                "needs_confirmation": needs_confirmation,
+                "is_locked": is_locked  # True after Confirm ₱X,XXX is clicked
             },
             "next_payday": {
                 "date": str(next_pay_date),
