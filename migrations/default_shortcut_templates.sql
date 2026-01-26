@@ -4,18 +4,20 @@
 -- Purpose: Provide system-level templates for Quick Add shortcuts
 --          that get instantiated per-user during Sahod setup
 -- Date: January 26, 2026
+-- Updated: Use direct category_id FK instead of string matching
 -- ==============================================
 
--- 1. Create default_shortcut_templates table
--- This is a SYSTEM table (not user-specific) that stores templates
-CREATE TABLE IF NOT EXISTS default_shortcut_templates (
+-- 1. Drop and recreate default_shortcut_templates table with category_id FK
+DROP TABLE IF EXISTS default_shortcut_templates;
+
+CREATE TABLE default_shortcut_templates (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     label VARCHAR(50) NOT NULL,
     label_en VARCHAR(50) NOT NULL,
     emoji VARCHAR(10) NOT NULL,
     default_amount NUMERIC(10,2) NOT NULL,
-    category_hint VARCHAR(100) NOT NULL,  -- Hint to match against expense_categories.name
-    envelope_hint VARCHAR(100) NOT NULL,  -- Hint to match against sahod_envelopes.name
+    category_id UUID NOT NULL REFERENCES expense_categories(id),  -- Direct FK, no more string matching!
+    envelope_hint VARCHAR(200),  -- Comma-separated aliases for flexible envelope matching (optional)
     display_order INT DEFAULT 0,
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMPTZ DEFAULT NOW()
@@ -29,27 +31,20 @@ DROP POLICY IF EXISTS "Anyone can read default templates" ON default_shortcut_te
 CREATE POLICY "Anyone can read default templates" ON default_shortcut_templates
     FOR SELECT USING (true);
 
--- Note: No INSERT/UPDATE/DELETE policies - only admins can modify via service role
+-- 2. Seed default templates with DIRECT category_id references
+-- These are the actual UUIDs from expense_categories table
+INSERT INTO default_shortcut_templates (label, label_en, emoji, default_amount, category_id, envelope_hint, display_order) VALUES
+-- Transportation shortcuts (category: Transportation = a022a637-707c-418d-919a-6aedd013e393)
+('Jeep', 'Jeep Fare', '🚌', 15, 'a022a637-707c-418d-919a-6aedd013e393', 'transpo,transportation,pamasahe,commute', 1),
+('Grab', 'Grab/Angkas', '🚗', 100, 'a022a637-707c-418d-919a-6aedd013e393', 'transpo,transportation,pamasahe,commute', 5),
 
--- 2. Seed default templates optimized for Filipino daily expenses
--- category_hint MUST match expense_categories.name EXACTLY (case-insensitive)
--- envelope_hint is flexible - will try to match user's envelope names
-DELETE FROM default_shortcut_templates; -- Clear old data first
+-- Food shortcuts (category: Milk Tea = d6afbf65-64ff-47b5-8791-135c2c7fd121, Food Delivery = a1c32020-5100-4333-9b2f-0f243b925e56)
+('Kape', 'Coffee', '☕', 50, 'd6afbf65-64ff-47b5-8791-135c2c7fd121', 'food,pagkain,kain,meals', 2),
+('Lunch', 'Lunch', '🍚', 100, 'a1c32020-5100-4333-9b2f-0f243b925e56', 'food,pagkain,kain,meals', 3),
+('Milk Tea', 'Milk Tea', '🧋', 120, 'd6afbf65-64ff-47b5-8791-135c2c7fd121', 'food,pagkain,kain,meals', 6),
 
-INSERT INTO default_shortcut_templates (label, label_en, emoji, default_amount, category_hint, envelope_hint, display_order) VALUES
--- Transportation shortcuts (category: Transportation)
-('Jeep', 'Jeep Fare', '🚌', 15, 'Transportation', 'transpo,transportation,pamasahe,commute', 1),
-('Grab', 'Grab/Angkas', '🚗', 100, 'Transportation', 'transpo,transportation,pamasahe,commute', 5),
-
--- Food shortcuts (categories: Milk Tea, Food Delivery)
-('Kape', 'Coffee', '☕', 50, 'Milk Tea', 'food,pagkain,kain,meals', 2),
-('Lunch', 'Lunch', '🍚', 100, 'Food Delivery', 'food,pagkain,kain,meals', 3),
-('Milk Tea', 'Milk Tea', '🧋', 120, 'Milk Tea', 'food,pagkain,kain,meals', 6),
-
--- Bills/Utilities shortcuts (category: Load)
-('Load', 'Mobile Load', '📱', 50, 'Load', 'bills,bayarin,utilities,kuryente', 4)
-
-ON CONFLICT DO NOTHING;
+-- Bills/Utilities shortcuts (category: Load = aceb231f-bbe3-4591-8dbb-d157307fa0e9)
+('Load', 'Mobile Load', '📱', 50, 'aceb231f-bbe3-4591-8dbb-d157307fa0e9', 'bills,bayarin,utilities,kuryente', 4);
 
 -- 3. Add is_system_default column to quick_add_shortcuts
 -- Marks shortcuts that were auto-created from templates

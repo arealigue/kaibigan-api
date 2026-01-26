@@ -1964,45 +1964,28 @@ async def create_default_shortcuts(
         envelopes = envelopes_res.data or []
         
         if not envelopes:
-            return {"created": 0, "message": "No envelopes found. Create envelopes first."}
+            return {"created": 0, "message": "No envelopes found. Complete Sahod Setup first."}
         
-        # 2. Get all expense categories (system + user's custom)
-        categories_res = supabase.table('expense_categories') \
-            .select('id, name, default_envelope_hint') \
-            .eq('type', 'expense') \
-            .or_(f'user_id.is.null,user_id.eq.{user_id}') \
-            .execute()
-        categories = categories_res.data or []
-        
-        # 3. Get default shortcut templates
+        # 2. Get default shortcut templates (now with direct category_id FK)
         templates_res = supabase.table('default_shortcut_templates') \
-            .select('*') \
+            .select('*, expense_categories(id, name)') \
             .eq('is_active', True) \
             .order('display_order') \
             .execute()
         templates = templates_res.data or []
         
         if not templates:
-            # Fallback: Use hardcoded templates if table doesn't exist yet
-            templates = [
-                {'label': 'Jeep', 'emoji': '🚌', 'default_amount': 15, 'category_hint': 'Transportation', 'envelope_hint': 'Transportation'},
-                {'label': 'Kape', 'emoji': '☕', 'default_amount': 50, 'category_hint': 'Milk Tea', 'envelope_hint': 'Food'},
-                {'label': 'Lunch', 'emoji': '🍚', 'default_amount': 100, 'category_hint': 'Food Delivery', 'envelope_hint': 'Food'},
-                {'label': 'Load', 'emoji': '📱', 'default_amount': 50, 'category_hint': 'Load', 'envelope_hint': 'Bills'},
-                {'label': 'Grab', 'emoji': '🚗', 'default_amount': 100, 'category_hint': 'Transportation', 'envelope_hint': 'Transportation'},
-                {'label': 'Milk Tea', 'emoji': '🧋', 'default_amount': 120, 'category_hint': 'Milk Tea', 'envelope_hint': 'Food'},
-            ]
+            return {"created": 0, "message": "No default templates found. Run migration first."}
         
-        # 4. Check existing shortcuts (to avoid duplicates)
+        # 3. Check existing shortcuts (to avoid duplicates)
         existing_res = supabase.table('quick_add_shortcuts') \
             .select('label') \
             .eq('user_id', user_id) \
             .execute()
         existing_labels = {s['label'].lower() for s in (existing_res.data or [])}
         
-        # 5. Create shortcuts for each template
+        # 4. Create shortcuts for each template
         created_count = 0
-        skipped_no_category = []
         skipped_duplicate = []
         created_shortcuts = []
         
@@ -2012,17 +1995,14 @@ async def create_default_shortcuts(
                 skipped_duplicate.append(template['label'])
                 continue
             
-            # Find matching category by EXACT name match (case-insensitive)
-            # category_hint should match expense_categories.name exactly
-            category = find_category_exact(categories, template['category_hint'])
-            
-            if not category:
-                skipped_no_category.append(f"{template['label']} (no category: {template['category_hint']})")
-                continue
+            # category_id comes directly from template (FK to expense_categories)
+            # No more string matching needed!
+            category_id = template['category_id']
+            category_name = template.get('expense_categories', {}).get('name', 'Unknown')
             
             # Find matching envelope by hint (flexible matching with aliases)
             # envelope_hint can be comma-separated aliases like "food,pagkain,kain"
-            envelope = find_envelope_flexible(envelopes, template['envelope_hint'])
+            envelope = find_envelope_flexible(envelopes, template.get('envelope_hint', ''))
             
             # Create shortcut - envelope is OPTIONAL
             shortcut_data = {
@@ -2030,7 +2010,7 @@ async def create_default_shortcuts(
                 'label': template['label'],
                 'emoji': template['emoji'],
                 'default_amount': float(template['default_amount']),
-                'category_id': category['id'],
+                'category_id': category_id,  # Direct from template, no matching!
                 'sahod_envelope_id': envelope['id'] if envelope else None,
                 'is_system_default': True,
                 'usage_count': 0
@@ -2041,7 +2021,8 @@ async def create_default_shortcuts(
                 created_count += 1
                 created_shortcuts.append({
                     'label': template['label'],
-                    'category': category['name'],
+                    'category': category_name,
+                    'category_id': category_id,
                     'envelope': envelope['name'] if envelope else None
                 })
             except Exception as insert_error:
@@ -2051,11 +2032,8 @@ async def create_default_shortcuts(
             "created": created_count,
             "created_shortcuts": created_shortcuts,
             "skipped_duplicate": skipped_duplicate,
-            "skipped_no_category": skipped_no_category,
             "templates_found": len(templates),
             "envelopes_found": len(envelopes),
-            "categories_found": len(categories),
-            "available_categories": [c['name'] for c in categories if c.get('type') == 'expense'],
             "available_envelopes": [e['name'] for e in envelopes]
         }
         
