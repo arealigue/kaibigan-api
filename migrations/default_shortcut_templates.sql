@@ -21,6 +21,16 @@ CREATE TABLE IF NOT EXISTS default_shortcut_templates (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Enable RLS on default_shortcut_templates (system table - public read access)
+ALTER TABLE default_shortcut_templates ENABLE ROW LEVEL SECURITY;
+
+-- RLS Policy: Allow authenticated users to read templates (system data)
+DROP POLICY IF EXISTS "Anyone can read default templates" ON default_shortcut_templates;
+CREATE POLICY "Anyone can read default templates" ON default_shortcut_templates
+    FOR SELECT USING (true);
+
+-- Note: No INSERT/UPDATE/DELETE policies - only admins can modify via service role
+
 -- 2. Seed default templates optimized for Filipino daily expenses
 -- These map to common expense categories and envelopes
 INSERT INTO default_shortcut_templates (label, label_en, emoji, default_amount, category_hint, envelope_hint, display_order) VALUES
