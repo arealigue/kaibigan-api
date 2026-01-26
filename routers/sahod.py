@@ -1933,3 +1933,147 @@ async def export_csv(
     except Exception as e:
         logger.exception("export_csv failed")
         raise HTTPException(status_code=500, detail="Failed to export CSV")
+
+
+# ============================================================================
+# DEFAULT SHORTCUTS CREATION
+# ============================================================================
+
+@router.post("/create-default-shortcuts")
+@limiter.limit("5/minute")
+async def create_default_shortcuts(
+    request: Request,
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """
+    Create default Quick Add shortcuts for a user based on their envelopes.
+    Called after Sahod Wizard completion to populate user's shortcuts with
+    proper category_id and sahod_envelope_id mappings.
+    
+    This replaces the hardcoded DEFAULT_SHORTCUTS in the frontend.
+    """
+    user_id = profile['id']
+    
+    try:
+        # 1. Get user's active envelopes
+        envelopes_res = supabase.table('sahod_envelopes') \
+            .select('id, name') \
+            .eq('user_id', user_id) \
+            .eq('is_active', True) \
+            .execute()
+        envelopes = envelopes_res.data or []
+        
+        if not envelopes:
+            return {"created": 0, "message": "No envelopes found. Create envelopes first."}
+        
+        # 2. Get all expense categories (system + user's custom)
+        categories_res = supabase.table('expense_categories') \
+            .select('id, name, default_envelope_hint') \
+            .eq('type', 'expense') \
+            .or_(f'user_id.is.null,user_id.eq.{user_id}') \
+            .execute()
+        categories = categories_res.data or []
+        
+        # 3. Get default shortcut templates
+        templates_res = supabase.table('default_shortcut_templates') \
+            .select('*') \
+            .eq('is_active', True) \
+            .order('display_order') \
+            .execute()
+        templates = templates_res.data or []
+        
+        if not templates:
+            # Fallback: Use hardcoded templates if table doesn't exist yet
+            templates = [
+                {'label': 'Jeep', 'emoji': '🚌', 'default_amount': 15, 'category_hint': 'Transportation', 'envelope_hint': 'Transportation'},
+                {'label': 'Kape', 'emoji': '☕', 'default_amount': 50, 'category_hint': 'Milk Tea', 'envelope_hint': 'Food'},
+                {'label': 'Lunch', 'emoji': '🍚', 'default_amount': 100, 'category_hint': 'Food Delivery', 'envelope_hint': 'Food'},
+                {'label': 'Load', 'emoji': '📱', 'default_amount': 50, 'category_hint': 'Load', 'envelope_hint': 'Bills'},
+                {'label': 'Grab', 'emoji': '🚗', 'default_amount': 100, 'category_hint': 'Transportation', 'envelope_hint': 'Transportation'},
+                {'label': 'Milk Tea', 'emoji': '🧋', 'default_amount': 120, 'category_hint': 'Milk Tea', 'envelope_hint': 'Food'},
+            ]
+        
+        # 4. Check existing shortcuts (to avoid duplicates)
+        existing_res = supabase.table('quick_add_shortcuts') \
+            .select('label') \
+            .eq('user_id', user_id) \
+            .execute()
+        existing_labels = {s['label'].lower() for s in (existing_res.data or [])}
+        
+        # 5. Create shortcuts for each template
+        created_count = 0
+        for template in templates:
+            # Skip if user already has this shortcut
+            if template['label'].lower() in existing_labels:
+                continue
+            
+            # Find matching category by hint
+            category = find_by_hint(categories, 'name', template['category_hint'])
+            
+            # Find matching envelope by hint
+            envelope = find_by_hint(envelopes, 'name', template['envelope_hint'])
+            
+            # Only create if we found both category and envelope
+            if category and envelope:
+                shortcut_data = {
+                    'user_id': user_id,
+                    'label': template['label'],
+                    'emoji': template['emoji'],
+                    'default_amount': float(template['default_amount']),
+                    'category_id': category['id'],
+                    'sahod_envelope_id': envelope['id'],
+                    'is_system_default': True,
+                    'usage_count': 0
+                }
+                
+                try:
+                    supabase.table('quick_add_shortcuts').insert(shortcut_data).execute()
+                    created_count += 1
+                except Exception as insert_error:
+                    logger.warning(f"Failed to create shortcut {template['label']}: {insert_error}")
+        
+        return {
+            "created": created_count,
+            "templates_found": len(templates),
+            "envelopes_found": len(envelopes),
+            "categories_found": len(categories)
+        }
+        
+    except Exception as e:
+        logger.exception("create_default_shortcuts failed")
+        raise HTTPException(status_code=500, detail=f"Failed to create default shortcuts: {str(e)}")
+
+
+def find_by_hint(items: list, field: str, hint: str) -> dict | None:
+    """
+    Find an item by hint matching (case-insensitive).
+    Tries exact match first, then partial match.
+    """
+    hint_lower = hint.lower()
+    
+    # Exact match first
+    for item in items:
+        if item.get(field, '').lower() == hint_lower:
+            return item
+    
+    # Partial match (hint contained in field or vice versa)
+    for item in items:
+        item_value = item.get(field, '').lower()
+        if hint_lower in item_value or item_value in hint_lower:
+            return item
+    
+    # Special mappings for common mismatches
+    hint_mappings = {
+        'transportation': ['transpo', 'transport', 'pamasahe', 'commute'],
+        'food': ['food', 'pagkain', 'kain'],
+        'bills': ['bills', 'utilities', 'bayarin'],
+    }
+    
+    for canonical, aliases in hint_mappings.items():
+        if hint_lower == canonical or hint_lower in aliases:
+            for item in items:
+                item_value = item.get(field, '').lower()
+                if canonical in item_value or any(alias in item_value for alias in aliases):
+                    return item
+    
+    return None
