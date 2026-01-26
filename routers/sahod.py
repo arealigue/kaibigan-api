@@ -2002,41 +2002,61 @@ async def create_default_shortcuts(
         
         # 5. Create shortcuts for each template
         created_count = 0
+        skipped_no_category = []
+        skipped_duplicate = []
+        created_shortcuts = []
+        
         for template in templates:
             # Skip if user already has this shortcut
             if template['label'].lower() in existing_labels:
+                skipped_duplicate.append(template['label'])
                 continue
             
-            # Find matching category by hint
-            category = find_by_hint(categories, 'name', template['category_hint'])
+            # Find matching category by EXACT name match (case-insensitive)
+            # category_hint should match expense_categories.name exactly
+            category = find_category_exact(categories, template['category_hint'])
             
-            # Find matching envelope by hint
-            envelope = find_by_hint(envelopes, 'name', template['envelope_hint'])
+            if not category:
+                skipped_no_category.append(f"{template['label']} (no category: {template['category_hint']})")
+                continue
             
-            # Only create if we found both category and envelope
-            if category and envelope:
-                shortcut_data = {
-                    'user_id': user_id,
+            # Find matching envelope by hint (flexible matching with aliases)
+            # envelope_hint can be comma-separated aliases like "food,pagkain,kain"
+            envelope = find_envelope_flexible(envelopes, template['envelope_hint'])
+            
+            # Create shortcut - envelope is OPTIONAL
+            shortcut_data = {
+                'user_id': user_id,
+                'label': template['label'],
+                'emoji': template['emoji'],
+                'default_amount': float(template['default_amount']),
+                'category_id': category['id'],
+                'sahod_envelope_id': envelope['id'] if envelope else None,
+                'is_system_default': True,
+                'usage_count': 0
+            }
+            
+            try:
+                supabase.table('quick_add_shortcuts').insert(shortcut_data).execute()
+                created_count += 1
+                created_shortcuts.append({
                     'label': template['label'],
-                    'emoji': template['emoji'],
-                    'default_amount': float(template['default_amount']),
-                    'category_id': category['id'],
-                    'sahod_envelope_id': envelope['id'],
-                    'is_system_default': True,
-                    'usage_count': 0
-                }
-                
-                try:
-                    supabase.table('quick_add_shortcuts').insert(shortcut_data).execute()
-                    created_count += 1
-                except Exception as insert_error:
-                    logger.warning(f"Failed to create shortcut {template['label']}: {insert_error}")
+                    'category': category['name'],
+                    'envelope': envelope['name'] if envelope else None
+                })
+            except Exception as insert_error:
+                logger.warning(f"Failed to create shortcut {template['label']}: {insert_error}")
         
         return {
             "created": created_count,
+            "created_shortcuts": created_shortcuts,
+            "skipped_duplicate": skipped_duplicate,
+            "skipped_no_category": skipped_no_category,
             "templates_found": len(templates),
             "envelopes_found": len(envelopes),
-            "categories_found": len(categories)
+            "categories_found": len(categories),
+            "available_categories": [c['name'] for c in categories if c.get('type') == 'expense'],
+            "available_envelopes": [e['name'] for e in envelopes]
         }
         
     except Exception as e:
@@ -2044,36 +2064,53 @@ async def create_default_shortcuts(
         raise HTTPException(status_code=500, detail=f"Failed to create default shortcuts: {str(e)}")
 
 
+def find_category_exact(categories: list, category_name: str) -> dict | None:
+    """
+    Find category by EXACT name match (case-insensitive).
+    This is the source of truth - expense_categories has fixed names.
+    """
+    name_lower = category_name.lower().strip()
+    
+    for cat in categories:
+        if cat.get('name', '').lower().strip() == name_lower:
+            return cat
+    
+    return None
+
+
+def find_envelope_flexible(envelopes: list, hint_aliases: str) -> dict | None:
+    """
+    Find envelope by flexible matching with multiple aliases.
+    hint_aliases is comma-separated like "food,pagkain,kain,meals"
+    
+    Envelopes are user-created so we need flexible matching.
+    """
+    if not envelopes:
+        return None
+    
+    # Parse comma-separated aliases
+    aliases = [a.strip().lower() for a in hint_aliases.split(',')]
+    
+    for envelope in envelopes:
+        envelope_name = envelope.get('name', '').lower().strip()
+        
+        # Check if envelope name matches any alias
+        for alias in aliases:
+            if alias == envelope_name or alias in envelope_name or envelope_name in alias:
+                return envelope
+    
+    return None
+
+
 def find_by_hint(items: list, field: str, hint: str) -> dict | None:
     """
-    Find an item by hint matching (case-insensitive).
-    Tries exact match first, then partial match.
+    DEPRECATED - use find_category_exact or find_envelope_flexible instead.
+    Kept for backward compatibility.
     """
     hint_lower = hint.lower()
     
-    # Exact match first
     for item in items:
         if item.get(field, '').lower() == hint_lower:
             return item
-    
-    # Partial match (hint contained in field or vice versa)
-    for item in items:
-        item_value = item.get(field, '').lower()
-        if hint_lower in item_value or item_value in hint_lower:
-            return item
-    
-    # Special mappings for common mismatches
-    hint_mappings = {
-        'transportation': ['transpo', 'transport', 'pamasahe', 'commute'],
-        'food': ['food', 'pagkain', 'kain'],
-        'bills': ['bills', 'utilities', 'bayarin'],
-    }
-    
-    for canonical, aliases in hint_mappings.items():
-        if hint_lower == canonical or hint_lower in aliases:
-            for item in items:
-                item_value = item.get(field, '').lower()
-                if canonical in item_value or any(alias in item_value for alias in aliases):
-                    return item
     
     return None

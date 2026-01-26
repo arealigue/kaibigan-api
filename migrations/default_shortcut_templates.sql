@@ -32,19 +32,22 @@ CREATE POLICY "Anyone can read default templates" ON default_shortcut_templates
 -- Note: No INSERT/UPDATE/DELETE policies - only admins can modify via service role
 
 -- 2. Seed default templates optimized for Filipino daily expenses
--- These map to common expense categories and envelopes
+-- category_hint MUST match expense_categories.name EXACTLY (case-insensitive)
+-- envelope_hint is flexible - will try to match user's envelope names
+DELETE FROM default_shortcut_templates; -- Clear old data first
+
 INSERT INTO default_shortcut_templates (label, label_en, emoji, default_amount, category_hint, envelope_hint, display_order) VALUES
--- Transportation shortcuts
-('Jeep', 'Jeep Fare', '🚌', 15, 'Transportation', 'Transportation', 1),
-('Grab', 'Grab/Angkas', '🚗', 100, 'Transportation', 'Transportation', 5),
+-- Transportation shortcuts (category: Transportation)
+('Jeep', 'Jeep Fare', '🚌', 15, 'Transportation', 'transpo,transportation,pamasahe,commute', 1),
+('Grab', 'Grab/Angkas', '🚗', 100, 'Transportation', 'transpo,transportation,pamasahe,commute', 5),
 
--- Food shortcuts  
-('Kape', 'Coffee', '☕', 50, 'Milk Tea', 'Food', 2),
-('Lunch', 'Lunch', '🍚', 100, 'Food Delivery', 'Food', 3),
-('Milk Tea', 'Milk Tea', '🧋', 120, 'Milk Tea', 'Food', 6),
+-- Food shortcuts (categories: Milk Tea, Food Delivery)
+('Kape', 'Coffee', '☕', 50, 'Milk Tea', 'food,pagkain,kain,meals', 2),
+('Lunch', 'Lunch', '🍚', 100, 'Food Delivery', 'food,pagkain,kain,meals', 3),
+('Milk Tea', 'Milk Tea', '🧋', 120, 'Milk Tea', 'food,pagkain,kain,meals', 6),
 
--- Bills/Utilities shortcuts
-('Load', 'Mobile Load', '📱', 50, 'Load', 'Bills', 4)
+-- Bills/Utilities shortcuts (category: Load)
+('Load', 'Mobile Load', '📱', 50, 'Load', 'bills,bayarin,utilities,kuryente', 4)
 
 ON CONFLICT DO NOTHING;
 
