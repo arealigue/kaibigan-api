@@ -445,6 +445,10 @@ async def create_kaban_transaction(
             # Convert date to string for JSON serialization
             tx_data['transaction_date'] = str(tx_data['transaction_date'])
         
+        # Convert empty string envelope_id to None for proper FK handling
+        if 'sahod_envelope_id' in tx_data and not tx_data['sahod_envelope_id']:
+            tx_data['sahod_envelope_id'] = None
+        
         insert_res = supabase.table('kaban_transactions').insert(tx_data).execute()
         
         if not insert_res.data:
@@ -513,8 +517,9 @@ async def update_kaban_transaction(
         for k, v in transaction_update.model_dump().items():
             if k == 'sahod_envelope_id':
                 # Always include sahod_envelope_id if it's in the request (can be None to unlink)
+                # Also convert empty string to None for proper FK handling
                 if k in transaction_update.model_fields_set:
-                    update_data[k] = v
+                    update_data[k] = v if v else None  # Empty string becomes None
             elif v is not None:
                 update_data[k] = v
         
