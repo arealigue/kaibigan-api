@@ -667,6 +667,110 @@ async def get_category_stats(
         raise HTTPException(status_code=500, detail="Failed to load category stats")
 
 
+@router.get("/kaban/export/csv")
+async def export_kaban_csv(
+    profile: Annotated[dict, Depends(get_user_profile)],
+    year: Optional[int] = None,
+    month: Optional[int] = None
+):
+    """
+    Export Kaban transactions to CSV format.
+    PRO users only.
+    
+    Returns CSV with columns:
+    - Date, Type, Category, Description, Amount, Envelope
+    """
+    user_id = profile['id']
+    tier = profile.get('tier', 'free')
+    
+    if tier != 'pro':
+        raise HTTPException(
+            status_code=403,
+            detail="CSV export is a PRO feature. Upgrade to access."
+        )
+    
+    try:
+        import io
+        import csv
+        from fastapi.responses import StreamingResponse
+        
+        # Default to current month if not specified
+        if not year:
+            year = datetime.date.today().year
+        if not month:
+            month = datetime.date.today().month
+        
+        # Get start and end dates for the month
+        start_date = datetime.date(year, month, 1)
+        if month == 12:
+            end_date = datetime.date(year + 1, 1, 1)
+        else:
+            end_date = datetime.date(year, month + 1, 1)
+        
+        # Get all transactions for the month with category and envelope info
+        tx_res = supabase.table('kaban_transactions') \
+            .select('*, expense_categories(name, emoji), sahod_envelopes(name)') \
+            .eq('user_id', user_id) \
+            .gte('transaction_date', str(start_date)) \
+            .lt('transaction_date', str(end_date)) \
+            .order('transaction_date', desc=True) \
+            .execute()
+        
+        # Build CSV data
+        output = io.BytesIO()
+        # Write UTF-8 BOM for Excel compatibility
+        output.write(b'\xef\xbb\xbf')
+        
+        # Wrap in TextIOWrapper for csv.writer
+        text_output = io.TextIOWrapper(output, encoding='utf-8', newline='')
+        writer = csv.writer(text_output)
+        
+        # Header
+        writer.writerow([
+            'Date',
+            'Type',
+            'Category',
+            'Description',
+            'Amount (PHP)',
+            'Envelope'
+        ])
+        
+        # Data rows
+        for tx in tx_res.data:
+            category_name = tx.get('expense_categories', {}).get('name', 'Unknown') if tx.get('expense_categories') else 'Unknown'
+            envelope_name = tx.get('sahod_envelopes', {}).get('name', '') if tx.get('sahod_envelopes') else ''
+            
+            writer.writerow([
+                tx.get('transaction_date', ''),
+                tx.get('transaction_type', '').capitalize(),
+                category_name,
+                tx.get('description', ''),
+                tx.get('amount', 0),
+                envelope_name
+            ])
+        
+        # Flush and seek
+        text_output.flush()
+        output.seek(0)
+        
+        # Generate filename
+        month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+        filename = f"kaban_transactions_{month_names[month-1]}_{year}.csv"
+        
+        return StreamingResponse(
+            output,
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}"
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("export_kaban_csv failed")
+        raise HTTPException(status_code=500, detail="Failed to export transactions")
+
+
 # --- AI FINANCIAL ADVISOR ENDPOINTS ---
 
 @router.post("/ai/financial-analysis")
