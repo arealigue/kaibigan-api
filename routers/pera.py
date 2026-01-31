@@ -520,6 +520,9 @@ async def update_kaban_transaction(
                 # Also convert empty string to None for proper FK handling
                 if k in transaction_update.model_fields_set:
                     update_data[k] = v if v else None  # Empty string becomes None
+            elif k == 'transaction_date' and v is not None:
+                # Convert date to string for JSON serialization
+                update_data[k] = str(v)
             elif v is not None:
                 update_data[k] = v
         
@@ -754,8 +757,9 @@ async def export_kaban_csv(
                 envelope_name
             ])
         
-        # Flush and seek
+        # Flush TextIOWrapper, detach it to prevent closing BytesIO, then seek to start
         text_output.flush()
+        text_output.detach()  # Detach without closing the underlying BytesIO
         output.seek(0)
         
         # Generate filename
