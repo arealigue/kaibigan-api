@@ -391,7 +391,8 @@ async def record_privacy_consent(
         # Update user's profile with consent
         consent_data = {
             'privacy_consent': True,
-            'privacy_consent_date': datetime.datetime.now(datetime.timezone.utc).isoformat()
+            'privacy_consent_date': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            'consent_version': 2  # Bump this when CURRENT_TERMS_VERSION changes in frontend
         }
         
         supabase.table('profiles').update(consent_data).eq('id', user_id).execute()
@@ -399,7 +400,8 @@ async def record_privacy_consent(
         return {
             "success": True,
             "message": "Privacy consent recorded",
-            "consent_date": consent_data['privacy_consent_date']
+            "consent_date": consent_data['privacy_consent_date'],
+            "consent_version": consent_data['consent_version']
         }
     except Exception as e:
         logger.exception("Failed to record privacy consent")
@@ -415,7 +417,8 @@ async def get_consent_status(
     """Check if user has consented to privacy policy"""
     return {
         "has_consented": profile.get('privacy_consent', False),
-        "consent_date": profile.get('privacy_consent_date')
+        "consent_date": profile.get('privacy_consent_date'),
+        "consent_version": profile.get('consent_version', 0)
     }
 
 
