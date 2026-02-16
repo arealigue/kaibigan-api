@@ -132,11 +132,8 @@ async def create_ipon_goal(
     goal_request: IponGoalCreate,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
-    """Create a new savings goal (Pro only)"""
-    tier = profile['tier']
+    """Create a new savings goal"""
     user_id = profile['id']
-    if tier != 'pro':
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ipon Tracker is a Pro feature.")
 
     try:
         goal_data = goal_request.model_dump()
@@ -159,11 +156,8 @@ async def create_ipon_goal(
 async def get_ipon_goals(
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
-    """Get all savings goals for the user (Pro only)"""
-    tier = profile['tier']
+    """Get all savings goals for the user"""
     user_id = profile['id']
-    if tier != 'pro':
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ipon Tracker is a Pro feature.")
 
     try:
         goals_res = supabase.table('ipon_goals').select('*').eq('user_id', user_id).order('created_at', desc=True).execute()
@@ -182,11 +176,8 @@ async def add_ipon_transaction(
     transaction_request: TransactionCreate,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
-    """Add a transaction to a savings goal (Pro only)"""
-    tier = profile['tier']
+    """Add a transaction to a savings goal"""
     user_id = profile['id']
-    if tier != 'pro':
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ipon Tracker is a Pro feature.")
     
     try:
         goal_res = supabase.table('ipon_goals').select('id').eq('id', transaction_request.goal_id).eq('user_id', user_id).single().execute()
@@ -216,11 +207,8 @@ async def get_goal_transactions(
     goal_id: str,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
-    """Get all transactions for a specific goal (Pro only)"""
-    tier = profile['tier']
+    """Get all transactions for a specific goal"""
     user_id = profile['id']
-    if tier != 'pro':
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ipon Tracker is a Pro feature.")
 
     try:
         tx_res = supabase.table('transactions').select('*').eq('user_id', user_id).eq('goal_id', goal_id).order('created_at', desc=True).execute()
@@ -679,48 +667,63 @@ async def get_category_stats(
 async def export_kaban_csv(
     profile: Annotated[dict, Depends(get_user_profile)],
     year: Optional[int] = None,
-    month: Optional[int] = None
+    month: Optional[int] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None
 ):
     """
     Export Kaban transactions to CSV format.
-    PRO users only.
+    Available to all users.
+    
+    Supports either:
+    - start_date & end_date (YYYY-MM-DD) for pay cycle filtering
+    - year & month for calendar month filtering
+    - Defaults to current month if neither provided
     
     Returns CSV with columns:
     - Date, Type, Category, Description, Amount, Envelope
     """
     user_id = profile['id']
-    tier = profile.get('tier', 'free')
-    
-    if tier != 'pro':
-        raise HTTPException(
-            status_code=403,
-            detail="CSV export is a PRO feature. Upgrade to access."
-        )
     
     try:
         import io
         import csv
         from fastapi.responses import StreamingResponse
         
-        # Default to current month if not specified
-        if not year:
-            year = datetime.date.today().year
-        if not month:
-            month = datetime.date.today().month
-        
-        # Get start and end dates for the month
-        start_date = datetime.date(year, month, 1)
-        if month == 12:
-            end_date = datetime.date(year + 1, 1, 1)
+        # Determine date range
+        if start_date and end_date:
+            # Pay cycle date range
+            try:
+                sd = datetime.date.fromisoformat(start_date)
+                ed = datetime.date.fromisoformat(end_date)
+                # Use inclusive range for end_date
+                filter_start = str(sd)
+                filter_end = str(ed + datetime.timedelta(days=1))
+                filename_label = f"{start_date}_to_{end_date}"
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
         else:
-            end_date = datetime.date(year, month + 1, 1)
+            # Calendar month filtering
+            if not year:
+                year = datetime.date.today().year
+            if not month:
+                month = datetime.date.today().month
+            
+            filter_start = str(datetime.date(year, month, 1))
+            if month == 12:
+                filter_end = str(datetime.date(year + 1, 1, 1))
+            else:
+                filter_end = str(datetime.date(year, month + 1, 1))
+            
+            month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+            filename_label = f"{month_names[month-1]}_{year}"
         
-        # Get all transactions for the month with category and envelope info
+        # Get all transactions for the date range with category and envelope info
         tx_res = supabase.table('kaban_transactions') \
             .select('*, expense_categories(name, emoji), sahod_envelopes(name)') \
             .eq('user_id', user_id) \
-            .gte('transaction_date', str(start_date)) \
-            .lt('transaction_date', str(end_date)) \
+            .gte('transaction_date', filter_start) \
+            .lt('transaction_date', filter_end) \
             .order('transaction_date', desc=True) \
             .execute()
         
@@ -763,8 +766,7 @@ async def export_kaban_csv(
         output.seek(0)
         
         # Generate filename
-        month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-        filename = f"kaban_transactions_{month_names[month-1]}_{year}.csv"
+        filename = f"kaban_transactions_{filename_label}.csv"
         
         return StreamingResponse(
             output,
