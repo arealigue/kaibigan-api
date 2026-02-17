@@ -720,22 +720,20 @@ async def create_envelope(
 ):
     """Create a new envelope."""
     user_id = profile['id']
-    tier = profile.get('tier', 'free')
     
     try:
-        # Check envelope limit for free users
-        if tier != 'pro':
-            count_res = supabase.table('sahod_envelopes') \
-                .select('id', count='exact') \
-                .eq('user_id', user_id) \
-                .eq('is_active', True) \
-                .execute()
-            
-            if count_res.count and count_res.count >= 5:
-                raise HTTPException(
-                    status_code=403, 
-                    detail="Free users can create up to 5 envelopes. Upgrade to PRO for unlimited."
-                )
+        # Check envelope limit (max 7 for all users)
+        count_res = supabase.table('sahod_envelopes') \
+            .select('id', count='exact') \
+            .eq('user_id', user_id) \
+            .eq('is_active', True) \
+            .execute()
+        
+        if count_res.count and count_res.count >= 7:
+            raise HTTPException(
+                status_code=403, 
+                detail="Maximum of 7 envelopes allowed."
+            )
         
         # Get max sort_order
         max_order_res = supabase.table('sahod_envelopes') \
@@ -750,10 +748,6 @@ async def create_envelope(
         data = envelope.model_dump()
         data['user_id'] = user_id
         data['sort_order'] = next_order
-        
-        # Only PRO users can enable rollover
-        if tier != 'pro':
-            data['is_rollover'] = False
         
         result = supabase.table('sahod_envelopes').insert(data).execute()
         
