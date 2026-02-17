@@ -1631,7 +1631,8 @@ async def get_dashboard(
                 "confirmed_at": instance.get('confirmed_at'),
                 "auto_confirmed_at": instance.get('auto_confirmed_at'),
                 "needs_confirmation": needs_confirmation,
-                "is_locked": is_locked  # True after Confirm ₱X,XXX is clicked
+                "is_locked": is_locked,  # True after Confirm ₱X,XXX is clicked
+                "payday_type": instance.get('payday_type', 'single')  # kinsenas/katapusan/single
             },
             "next_payday": {
                 "date": str(next_pay_date),
