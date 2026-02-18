@@ -82,6 +82,8 @@ class FillAllocationsRequest(BaseModel):
 
 class ConfirmInstanceRequest(BaseModel):
     actual_amount: Optional[float] = None  # If different from expected
+    candidate_action: Optional[str] = None  # "link" or "skip" — after candidate found
+    candidate_tx_id: Optional[str] = None  # Kaban tx ID to link when action="link"
 
 
 class AllocationUpdate(BaseModel):
@@ -558,7 +560,12 @@ async def confirm_instance(
 ):
     """Confirm sahod received (Tap to Fund step 1).
     
-    This also creates an income transaction in Kaban to link the plan with actual money.
+    Flow (§5.1 Income Reconciliation):
+    1. Default call (no candidate_action): Runs smarter dedup check.
+       - If candidate income tx found → returns { status: 'candidate_found', candidate: {...} }
+       - If no candidate → confirms instance + creates income tx in Kaban
+    2. candidate_action='link': Links existing Kaban tx to this instance (user chose 'Yes')
+    3. candidate_action='skip': Skips dedup, creates new income tx (user chose 'No')
     """
     user_id = profile['id']
     
@@ -579,12 +586,102 @@ async def confirm_instance(
         # Determine actual amount
         actual_amount = confirm_request.actual_amount if confirm_request.actual_amount is not None else instance['expected_amount']
         
+        # ── LINK ACTION: User chose "Yes, link it" ──
+        if confirm_request.candidate_action == "link" and confirm_request.candidate_tx_id:
+            # Link existing Kaban tx to this Sobre instance
+            try:
+                supabase.table('kaban_transactions') \
+                    .update({'sahod_instance_id': instance_id}) \
+                    .eq('id', confirm_request.candidate_tx_id) \
+                    .eq('user_id', user_id) \
+                    .execute()
+                logger.info(f"Linked existing tx {confirm_request.candidate_tx_id} to instance {instance_id}")
+            except Exception as link_err:
+                logger.warning(f"Failed to link tx {confirm_request.candidate_tx_id}: {link_err}")
+            
+            # Update instance as confirmed
+            update_data = {
+                'is_assumed': False,
+                'confirmed_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                'updated_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                'actual_amount': actual_amount,
+                'requires_manual_reconfirm': False
+            }
+            result = supabase.table('sahod_pay_cycle_instances') \
+                .update(update_data) \
+                .eq('id', instance_id) \
+                .eq('user_id', user_id) \
+                .execute()
+            
+            if not result.data:
+                raise HTTPException(status_code=500, detail="Failed to confirm instance")
+            return result.data[0]
+        
+        # ── SMARTER DEDUP CHECK (default call, no action specified) ──
+        if confirm_request.candidate_action is None:
+            try:
+                pay_date = instance.get('period_start', datetime.date.today().isoformat())
+                
+                # Find income categories named Salary/Income/Sahod
+                salary_categories = supabase.table('expense_categories') \
+                    .select('id') \
+                    .or_(f'user_id.is.null,user_id.eq.{user_id}') \
+                    .eq('type', 'income') \
+                    .or_('name.ilike.%salary%,name.ilike.%income%,name.ilike.%sahod%') \
+                    .execute()
+                
+                if salary_categories.data:
+                    cat_ids = [c['id'] for c in salary_categories.data]
+                    
+                    # Date range: pay_date ± 2 days
+                    pay_date_obj = datetime.datetime.strptime(pay_date, '%Y-%m-%d').date()
+                    date_start = (pay_date_obj - datetime.timedelta(days=2)).isoformat()
+                    date_end = (pay_date_obj + datetime.timedelta(days=2)).isoformat()
+                    
+                    # Amount range: ± 10%
+                    amount_low = actual_amount * 0.9
+                    amount_high = actual_amount * 1.1
+                    
+                    # Query for candidate match
+                    candidate_query = supabase.table('kaban_transactions') \
+                        .select('id, amount, description, transaction_date, expense_categories(name, emoji)') \
+                        .eq('user_id', user_id) \
+                        .eq('transaction_type', 'income') \
+                        .is_('sahod_instance_id', 'null') \
+                        .gte('transaction_date', date_start) \
+                        .lte('transaction_date', date_end) \
+                        .gte('amount', amount_low) \
+                        .lte('amount', amount_high) \
+                        .in_('category_id', cat_ids) \
+                        .limit(1) \
+                        .execute()
+                    
+                    if candidate_query.data:
+                        candidate = candidate_query.data[0]
+                        cat_info = candidate.get('expense_categories') or {}
+                        return {
+                            "status": "candidate_found",
+                            "candidate": {
+                                "id": candidate['id'],
+                                "amount": candidate['amount'],
+                                "description": candidate.get('description', ''),
+                                "transaction_date": candidate['transaction_date'],
+                                "category_name": cat_info.get('name', 'Income') if isinstance(cat_info, dict) else 'Income'
+                            }
+                        }
+            except Exception as dedup_err:
+                logger.warning(f"Smarter dedup check failed, proceeding with normal flow: {dedup_err}")
+        
+        # ── NORMAL FLOW: Update instance + create income tx ──
+        # (Reached when: no candidate found, or candidate_action='skip')
+        
         # Update instance as confirmed
         update_data = {
             'is_assumed': False,
             'confirmed_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
             'updated_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            'actual_amount': actual_amount
+            'actual_amount': actual_amount,
+            'requires_manual_reconfirm': False
         }
         
         result = supabase.table('sahod_pay_cycle_instances') \
@@ -597,7 +694,6 @@ async def confirm_instance(
             raise HTTPException(status_code=500, detail="Failed to confirm instance")
         
         # === CREATE INCOME TRANSACTION IN KABAN ===
-        # This links the Sahod Plan with actual money in Kaban ledger
         try:
             # Get or find a "Salary" income category
             salary_category = supabase.table('expense_categories') \
@@ -608,7 +704,6 @@ async def confirm_instance(
                 .limit(1) \
                 .execute()
             
-            # If no salary category, try to find any income category
             if not salary_category.data:
                 salary_category = supabase.table('expense_categories') \
                     .select('id') \
@@ -624,8 +719,7 @@ async def confirm_instance(
             period_start = instance.get('period_start', '')
             description = f'{cycle_name} - {period_start}'
             
-            # Check if income transaction already exists for this instance (prevent duplicates)
-            # Try using sahod_instance_id first, fallback to description match
+            # Existing dedup: check sahod_instance_id or description match
             try:
                 existing_tx = supabase.table('kaban_transactions') \
                     .select('id') \
@@ -635,7 +729,6 @@ async def confirm_instance(
                     .limit(1) \
                     .execute()
             except Exception:
-                # sahod_instance_id column might not exist - check by description instead
                 existing_tx = supabase.table('kaban_transactions') \
                     .select('id') \
                     .eq('user_id', user_id) \
@@ -646,7 +739,6 @@ async def confirm_instance(
                     .execute()
             
             if not existing_tx.data:
-                # Create the income transaction - try with sahod_instance_id first
                 tx_data = {
                     'user_id': user_id,
                     'transaction_type': 'income',
@@ -654,15 +746,13 @@ async def confirm_instance(
                     'description': description,
                     'category_id': category_id,
                     'transaction_date': datetime.date.today().isoformat(),
-                    'source': 'manual',  # Use 'manual' since constraint doesn't include 'sahod_confirm'
+                    'source': 'manual',
                 }
                 
-                # Try to include sahod_instance_id if column exists
                 try:
                     tx_data['sahod_instance_id'] = instance_id
                     supabase.table('kaban_transactions').insert(tx_data).execute()
                 except Exception as insert_error:
-                    # If sahod_instance_id column doesn't exist, insert without it
                     if 'sahod_instance_id' in str(insert_error):
                         del tx_data['sahod_instance_id']
                         supabase.table('kaban_transactions').insert(tx_data).execute()
@@ -671,7 +761,6 @@ async def confirm_instance(
                         
                 logger.info(f"Created income transaction for confirmed sahod instance {instance_id}")
         except Exception as tx_error:
-            # Log but don't fail - the confirmation itself succeeded
             logger.warning(f"Failed to create income transaction for instance {instance_id}: {tx_error}")
         
         return result.data[0]
@@ -1616,6 +1705,7 @@ async def get_dashboard(
         
         # Determine instance state for UI
         needs_confirmation = instance.get('is_assumed', True)
+        requires_reconfirm = instance.get('requires_manual_reconfirm', False)
         is_locked = instance.get('confirmed_at') is not None  # Locked after income confirmation
         
         return {
@@ -1630,7 +1720,8 @@ async def get_dashboard(
                 "is_assumed": instance.get('is_assumed', True),
                 "confirmed_at": instance.get('confirmed_at'),
                 "auto_confirmed_at": instance.get('auto_confirmed_at'),
-                "needs_confirmation": needs_confirmation,
+                "needs_confirmation": needs_confirmation or requires_reconfirm,
+                "requires_manual_reconfirm": requires_reconfirm,
                 "is_locked": is_locked,  # True after Confirm ₱X,XXX is clicked
                 "payday_type": instance.get('payday_type', 'single')  # kinsenas/katapusan/single
             },

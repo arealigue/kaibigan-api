@@ -537,17 +537,57 @@ async def delete_kaban_transaction(
     transaction_id: str,
     profile: Annotated[dict, Depends(get_user_profile)]
 ):
-    """Delete a transaction - Available to all users"""
+    """Delete a transaction - Available to all users
+    
+    §5.1 Orphan Handling: If the transaction is linked to a Sobre pay cycle instance
+    (has sahod_instance_id), reset that instance so the user must re-confirm income.
+    """
     user_id = profile['id']
     # No tier check - all authenticated users can delete their own transactions
 
     try:
+        # §5.1: First fetch the tx to check for Sobre link before deleting
+        tx_res = supabase.table('kaban_transactions') \
+            .select('id, sahod_instance_id') \
+            .eq('id', transaction_id) \
+            .eq('user_id', user_id) \
+            .single() \
+            .execute()
+        
+        if not tx_res.data:
+            raise HTTPException(status_code=404, detail="Transaction not found or permission denied.")
+        
+        sahod_instance_id = tx_res.data.get('sahod_instance_id')
+        
+        # §5.1: If linked to Sobre, reset the instance for re-confirmation
+        if sahod_instance_id:
+            try:
+                supabase.table('sahod_pay_cycle_instances') \
+                    .update({
+                        'is_assumed': True,
+                        'confirmed_at': None,
+                        'actual_amount': None,
+                        'requires_manual_reconfirm': True,
+                        'updated_at': datetime.datetime.now(datetime.timezone.utc).isoformat()
+                    }) \
+                    .eq('id', sahod_instance_id) \
+                    .eq('user_id', user_id) \
+                    .execute()
+                logger.info(f"Reset Sobre instance {sahod_instance_id} after linked tx {transaction_id} deletion")
+            except Exception as reset_err:
+                logger.warning(f"Failed to reset Sobre instance {sahod_instance_id}: {reset_err}")
+        
+        # Now delete the transaction
         delete_res = supabase.table('kaban_transactions').delete().eq('id', transaction_id).eq('user_id', user_id).execute()
         
         if not delete_res.data:
             raise HTTPException(status_code=404, detail="Transaction not found or permission denied.")
             
-        return {"message": "Transaction deleted successfully", "deleted_id": transaction_id}
+        return {
+            "message": "Transaction deleted successfully",
+            "deleted_id": transaction_id,
+            "sahod_instance_reset": sahod_instance_id is not None
+        }
     except HTTPException:
         raise
     except Exception:
