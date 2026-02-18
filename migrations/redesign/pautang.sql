@@ -109,7 +109,7 @@ SELECT
   notes,
   CASE WHEN status = 'unpaid' THEN 'active' ELSE 'paid' END AS status,
   created_at,
-  updated_at
+  now()
 FROM utang
 ON CONFLICT (id) DO NOTHING;
 
