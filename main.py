@@ -458,19 +458,16 @@ async def generate_meal_plan(
 ):
     tier = profile['tier'] 
     model_to_use = "gpt-5-nano"
-    day_count = 1
 
     if tier == 'pro':
         model_to_use = "gpt-5-mini"
-        day_count = meal_plan_request.days
+        day_count = meal_plan_request.days  # PRO: up to 7 days
     else:
-        # Free tier limitations
-        meal_plan_request.restrictions = []
-        meal_plan_request.allergies = []
+        # Free tier: up to 3 days, dietary/allergy allowed, advanced features locked
+        day_count = min(meal_plan_request.days, 3)
         meal_plan_request.skill_level = "Home Cook"
         meal_plan_request.time_limit = 0
         meal_plan_request.include_nutrition = False  # Nutrition is PRO only
-        day_count = 1
 
     # Get budget definition with auto-upgrade logic
     budget_info = get_budget_definition(meal_plan_request.budget_range, meal_plan_request.family_size)
@@ -584,12 +581,14 @@ async def generate_meal_plan(
     for a family of {meal_plan_request.family_size} to ensure adequate nutrition.
     """
     
+    # Dietary preferences & allergies — available to all tiers
+    if meal_plan_request.restrictions:
+        system_prompt += f"\n    7. Dietary Restrictions: Must be {', '.join(meal_plan_request.restrictions)}."
+    if meal_plan_request.allergies:
+        system_prompt += f"\n    8. Allergies: MUST NOT contain {', '.join(meal_plan_request.allergies)}."
+
     if tier == "pro":
         system_prompt += "\n    --- PRO USER RULES ---"
-        if meal_plan_request.restrictions:
-            system_prompt += f"\n    7. Dietary Restrictions: Must be {', '.join(meal_plan_request.restrictions)}."
-        if meal_plan_request.allergies:
-            system_prompt += f"\n    8. Allergies: MUST NOT contain {', '.join(meal_plan_request.allergies)}."
         system_prompt += f"\n    9. Skill Level: Recipes must be for a '{meal_plan_request.skill_level}' cook."
         if meal_plan_request.time_limit > 0:
             system_prompt += f"\n    10. Time Limit: All recipes must be doable in {meal_plan_request.time_limit} minutes or less."
@@ -892,11 +891,14 @@ async def create_recipe_from_notes(
     tier = profile['tier']
     user_id = profile['id']
 
+    # Free tier: allow up to 2 recipes
     if tier != 'pro':
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, 
-            detail="The 'Luto ni Nanay' Recipe Bank is a Pro feature. Please upgrade to save your recipes."
-        )
+        existing = supabase.table('recipes').select('id').eq('user_id', user_id).execute()
+        if len(existing.data or []) >= 2:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You've reached the maximum of 2 family recipes. More recipe slots coming soon!"
+            )
 
     system_prompt = f"""
     You are an expert Filipino recipe formatter. A user is providing their
