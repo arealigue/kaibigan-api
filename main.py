@@ -633,7 +633,7 @@ async def generate_meal_plan(
     - Each meal MUST have an estimated_cost
     - grocery_list is {"REQUIRED" if meal_plan_request.include_grocery_list else "NOT required"}
     - If grocery_list is included: Do NOT add individual prices per item. Instead, provide grocery_total_estimate.
-    - grocery_total_estimate should be the total estimated cost for ALL groceries needed.
+    - grocery_total_estimate MUST be consistent with total_cost_estimate. The grocery cost is what you'd spend to buy ingredients for ALL {day_count} day(s). It should be close to (but can be slightly higher than) the total_cost_estimate since you buy ingredients in bulk quantities. Do NOT inflate grocery prices — keep them realistic for Philippine wet market (palengke) prices.
     - nutrition_summary is {"REQUIRED for EVERY day (Pro feature)" if meal_plan_request.include_nutrition and tier == "pro" else "NOT required"}"""
     
     if tier == "pro":
