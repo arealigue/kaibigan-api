@@ -20,7 +20,7 @@ from slowapi.errors import RateLimitExceeded
 
 # Import shared dependencies and routers
 from dependencies import get_user_profile, supabase, limiter
-from routers import pera, sahod
+from routers import pera, sahod, pautang
 
 logger = logging.getLogger(__name__)
 
@@ -158,6 +158,7 @@ app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
 # --- 2.5. INCLUDE ROUTERS ---
 app.include_router(pera.router)
 app.include_router(sahod.router)
+app.include_router(pautang.router)
 
 # --- 3. "SINGLE SOURCE OF TRUTH" DATA ---
 # Budget ranges per head (internal calculations)
