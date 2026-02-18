@@ -620,7 +620,8 @@ async def confirm_instance(
         # ── SMARTER DEDUP CHECK (default call, no action specified) ──
         if confirm_request.candidate_action is None:
             try:
-                pay_date = instance.get('period_start', datetime.date.today().isoformat())
+                period_start = instance.get('period_start', datetime.date.today().isoformat())
+                period_end = instance.get('period_end', None)
                 
                 # Find income categories named Salary/Income/Sahod
                 salary_categories = supabase.table('expense_categories') \
@@ -633,10 +634,15 @@ async def confirm_instance(
                 if salary_categories.data:
                     cat_ids = [c['id'] for c in salary_categories.data]
                     
-                    # Date range: pay_date ± 2 days
-                    pay_date_obj = datetime.datetime.strptime(pay_date, '%Y-%m-%d').date()
-                    date_start = (pay_date_obj - datetime.timedelta(days=2)).isoformat()
-                    date_end = (pay_date_obj + datetime.timedelta(days=2)).isoformat()
+                    # Date range: full pay cycle window (period_start to period_end)
+                    # This catches salary logged anytime within the cycle, not just ±2 days of payday
+                    date_start = period_start
+                    if period_end:
+                        date_end = period_end
+                    else:
+                        # Fallback: period_start + 16 days (covers both monthly & kinsenas)
+                        pay_date_obj = datetime.datetime.strptime(period_start, '%Y-%m-%d').date()
+                        date_end = (pay_date_obj + datetime.timedelta(days=16)).isoformat()
                     
                     # Amount range: ± 10%
                     amount_low = actual_amount * 0.9
@@ -717,9 +723,10 @@ async def confirm_instance(
             # Build description
             cycle_name = instance.get('sahod_pay_cycles', {}).get('cycle_name', 'Salary')
             period_start = instance.get('period_start', '')
+            period_end = instance.get('period_end', '')
             description = f'{cycle_name} - {period_start}'
             
-            # Existing dedup: check sahod_instance_id or description match
+            # Dedup layer 1: check by sahod_instance_id (exact link)
             try:
                 existing_tx = supabase.table('kaban_transactions') \
                     .select('id') \
@@ -737,6 +744,37 @@ async def confirm_instance(
                     .eq('amount', actual_amount) \
                     .limit(1) \
                     .execute()
+            
+            # Dedup layer 2: check for any salary-like income within this pay cycle
+            # Catches manually-logged salary from Kaban banner (different description, no sahod_instance_id)
+            if not existing_tx.data and period_start and period_end:
+                try:
+                    amount_low = actual_amount * 0.9
+                    amount_high = actual_amount * 1.1
+                    cycle_income = supabase.table('kaban_transactions') \
+                        .select('id') \
+                        .eq('user_id', user_id) \
+                        .eq('transaction_type', 'income') \
+                        .gte('transaction_date', period_start) \
+                        .lte('transaction_date', period_end) \
+                        .gte('amount', amount_low) \
+                        .lte('amount', amount_high) \
+                        .limit(1) \
+                        .execute()
+                    if cycle_income.data:
+                        # Link the existing tx to this Sobre instance instead of creating a duplicate
+                        try:
+                            supabase.table('kaban_transactions') \
+                                .update({'sahod_instance_id': instance_id}) \
+                                .eq('id', cycle_income.data[0]['id']) \
+                                .eq('user_id', user_id) \
+                                .execute()
+                            logger.info(f"Linked existing cycle income tx {cycle_income.data[0]['id']} to instance {instance_id} (dedup layer 2)")
+                        except Exception as link_err:
+                            logger.warning(f"Failed to link existing tx in dedup layer 2: {link_err}")
+                        existing_tx = cycle_income  # Skip creation
+                except Exception as dedup2_err:
+                    logger.warning(f"Dedup layer 2 check failed: {dedup2_err}")
             
             if not existing_tx.data:
                 tx_data = {
