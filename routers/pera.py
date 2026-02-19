@@ -102,6 +102,10 @@ class AIFinancialChatRequest(BaseModel):
     transactions: List[TransactionItem]
     chat_history: Optional[List[ChatMessage]] = []
 
+class SimpleChatRequest(BaseModel):
+    """Simple chat request that fetches user data server-side"""
+    message: str
+
 
 # --- RECURRING INCOME MODELS ---
 
@@ -820,6 +824,93 @@ async def export_kaban_csv(
     except Exception:
         logger.exception("export_kaban_csv failed")
         raise HTTPException(status_code=500, detail="Failed to export transactions")
+
+
+# --- SIMPLE CHAT ENDPOINT (server-side data fetch) ---
+
+@router.post("/chat")
+@limiter.limit("10/minute")
+async def simple_chat(
+    request: Request,
+    chat_request: SimpleChatRequest,
+    profile: Annotated[dict, Depends(get_user_profile)]
+):
+    """
+    Simple chat endpoint for Ask Kaibigan bubble.
+    Fetches user's financial data server-side and responds to questions.
+    Available to all users (free tier: 2 questions/day tracked client-side).
+    """
+    user_id = profile['id']
+    
+    try:
+        # Fetch user's recent transactions (last 30 days)
+        thirty_days_ago = (datetime.datetime.now() - datetime.timedelta(days=30)).strftime('%Y-%m-%d')
+        tx_result = supabase.table('kaban_transactions').select(
+            'amount, transaction_type, description, transaction_date, expense_categories(name, emoji)'
+        ).eq('user_id', user_id).gte('transaction_date', thirty_days_ago).order('transaction_date', desc=True).limit(50).execute()
+        
+        transactions = tx_result.data if tx_result.data else []
+        
+        # Calculate summary
+        total_income = sum(tx['amount'] for tx in transactions if tx.get('transaction_type') == 'income')
+        total_expense = sum(tx['amount'] for tx in transactions if tx.get('transaction_type') == 'expense')
+        balance = total_income - total_expense
+        
+        # Build spending breakdown
+        category_breakdown = {}
+        for tx in transactions:
+            if tx.get('transaction_type') == 'expense' and tx.get('expense_categories'):
+                cat = tx['expense_categories']
+                cat_name = cat.get('name', 'Other')
+                if cat_name not in category_breakdown:
+                    category_breakdown[cat_name] = {'total': 0, 'emoji': cat.get('emoji', '📦')}
+                category_breakdown[cat_name]['total'] += tx['amount']
+        
+        top_categories = sorted(category_breakdown.items(), key=lambda x: x[1]['total'], reverse=True)[:5]
+        spending_summary = "\n".join([f"- {cat[1]['emoji']} {cat[0]}: ₱{cat[1]['total']:,.0f}" for cat in top_categories]) or "No expenses yet"
+        
+        # Build prompt
+        system_prompt = f"""Ikaw si Kaibigan, ang friendly financial assistant ng user. Sumagot ka sa tanong niya about finances.
+
+BRAND VOICE:
+- Tone: Taglish, Friendly, Supportive
+- Address: Call the user "Boss"
+- Style: Use emojis, be concise (2-3 sentences max), be helpful
+
+USER'S FINANCIAL DATA (Last 30 Days):
+- Total Income: ₱{total_income:,.0f}
+- Total Expenses: ₱{total_expense:,.0f}
+- Balance: ₱{balance:,.0f}
+- Transaction Count: {len(transactions)}
+
+TOP SPENDING CATEGORIES:
+{spending_summary}
+
+RULES:
+1. Answer the user's question directly and concisely
+2. If they ask about spending, refer to the data above
+3. If they ask for tips, give 1-2 specific actionable tips
+4. Keep responses SHORT (2-4 sentences max)
+5. Always be encouraging, never judgmental
+6. End with a positive note or emoji 💪
+
+USER'S QUESTION: {chat_request.message}"""
+
+        chat_completion = await client.chat.completions.create(
+            model="gpt-5-nano",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": chat_request.message}
+            ]
+        )
+        
+        ai_response = chat_completion.choices[0].message.content
+        
+        return {"response": ai_response}
+        
+    except Exception as e:
+        logger.exception(f"simple_chat failed: {e}")
+        raise HTTPException(status_code=500, detail="Sorry, something went wrong. Try again later.")
 
 
 # --- AI FINANCIAL ADVISOR ENDPOINTS ---
