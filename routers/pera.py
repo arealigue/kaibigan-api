@@ -843,6 +843,26 @@ async def simple_chat(
     user_id = profile['id']
     
     try:
+        # Fetch profile details for context
+        pay_cycle_type = profile.get('pay_cycle_type', 'monthly')
+        base_salary = profile.get('base_salary', 0) or 0
+        
+        # Pay cycle context
+        cycle_labels = {
+            'daily': 'daily (araw-araw)',
+            'weekly': 'weekly (lingguhan)',
+            'kinsenas': 'kinsenas (every 15th & 30th)',
+            'monthly': 'monthly (buwanan)',
+        }
+        cycle_label = cycle_labels.get(pay_cycle_type, 'monthly')
+        
+        salary_suffix = {
+            'daily': '/day',
+            'weekly': '/week', 
+            'kinsenas': '/kinsenas',
+            'monthly': '/month',
+        }
+        
         # Fetch user's recent transactions (last 30 days)
         thirty_days_ago = (datetime.datetime.now() - datetime.timedelta(days=30)).strftime('%Y-%m-%d')
         tx_result = supabase.table('kaban_transactions').select(
@@ -856,6 +876,14 @@ async def simple_chat(
         total_expense = sum(tx['amount'] for tx in transactions if tx.get('transaction_type') == 'expense')
         balance = total_income - total_expense
         
+        # Calculate daily average spending
+        unique_expense_dates = set(
+            tx['transaction_date'] for tx in transactions 
+            if tx.get('transaction_type') == 'expense'
+        )
+        days_with_expenses = len(unique_expense_dates) or 1
+        daily_avg_expense = total_expense / days_with_expenses
+        
         # Build spending breakdown
         category_breakdown = {}
         for tx in transactions:
@@ -863,38 +891,52 @@ async def simple_chat(
                 cat = tx['expense_categories']
                 cat_name = cat.get('name', 'Other')
                 if cat_name not in category_breakdown:
-                    category_breakdown[cat_name] = {'total': 0, 'emoji': cat.get('emoji', '📦')}
+                    category_breakdown[cat_name] = {'total': 0, 'count': 0, 'emoji': cat.get('emoji', '📦')}
                 category_breakdown[cat_name]['total'] += tx['amount']
+                category_breakdown[cat_name]['count'] += 1
         
         top_categories = sorted(category_breakdown.items(), key=lambda x: x[1]['total'], reverse=True)[:5]
-        spending_summary = "\n".join([f"- {cat[1]['emoji']} {cat[0]}: ₱{cat[1]['total']:,.0f}" for cat in top_categories]) or "No expenses yet"
+        spending_summary = "\n".join([
+            f"- {cat[1]['emoji']} {cat[0]}: ₱{cat[1]['total']:,.0f} ({cat[1]['count']} transactions)"
+            for cat in top_categories
+        ]) or "Wala pang gastos na na-log."
+        
+        # Spending as % of income
+        spend_pct = (total_expense / total_income * 100) if total_income > 0 else 0
         
         # Build prompt
-        system_prompt = f"""Ikaw si Kaibigan, ang friendly financial assistant ng user. Sumagot ka sa tanong niya about finances.
+        system_prompt = f"""Ikaw si Kaibigan, ang personal na financial assistant ng user. Filipino finance app ito para sa mga Pinoy.
 
 BRAND VOICE:
-- Tone: Taglish, Friendly, Supportive
-- Address: Call the user "Boss"
-- Style: Use emojis, be concise (2-3 sentences max), be helpful
+- Tone: Taglish (mix of Filipino and English), Friendly, Supportive pero honest
+- Address: Always call the user "Boss"
+- Style: Use emojis sparingly, bullet points for clarity, be specific with peso amounts
+- Cultural Context: Aware ng "Petsa de Peligro", "Tipid tips", "Ipon culture", "Sweldo"
 
-USER'S FINANCIAL DATA (Last 30 Days):
+USER PROFILE:
+- Pay Cycle: {cycle_label}
+- Base Salary: ₱{base_salary:,.0f}{salary_suffix.get(pay_cycle_type, '/mo')}
+
+FINANCIAL DATA (Last 30 Days):
 - Total Income: ₱{total_income:,.0f}
 - Total Expenses: ₱{total_expense:,.0f}
 - Balance: ₱{balance:,.0f}
+- Spending vs Income: {spend_pct:.0f}%
+- Daily Avg Spending: ₱{daily_avg_expense:,.0f}/day
 - Transaction Count: {len(transactions)}
 
 TOP SPENDING CATEGORIES:
 {spending_summary}
 
-RULES:
-1. Answer the user's question directly and concisely
-2. If they ask about spending, refer to the data above
-3. If they ask for tips, give 1-2 specific actionable tips
-4. Keep responses SHORT (2-4 sentences max)
-5. Always be encouraging, never judgmental
-6. End with a positive note or emoji 💪
-
-USER'S QUESTION: {chat_request.message}"""
+RESPONSE RULES:
+1. Answer the user's question directly — use THEIR financial data, not generic advice
+2. Be specific with peso amounts (e.g., "Groceries mo ₱400, try mo i-cap sa ₱300")
+3. Frame advice around their ACTUAL pay cycle — if daily, talk per-day; if weekly, per-week
+4. Keep responses 3-5 sentences. Use bullet points if listing categories or tips
+5. If balance is negative, be honest pero encouraging ("Kaya pa i-recover!")
+6. If they have few transactions, suggest tracking more: "Mas maraming data, mas accurate ang advice ko"
+7. Always end with one clear, actionable next step
+8. NEVER say "monthly" if user is on daily/weekly cycle — match their cycle language"""
 
         chat_completion = await client.chat.completions.create(
             model="gpt-5-nano",
