@@ -39,7 +39,7 @@ async def require_admin(profile=Depends(get_user_profile)):
 # ============================================
 @router.get("/stats/overview")
 async def get_overview_stats(_admin=Depends(require_admin)):
-    """Get KPI cards data: total users, active (7d), new today, PRO threshold."""
+    """Get KPI cards data: total users, active (7d), new today, PRO threshold, transactions."""
     try:
         # Total users
         total_res = supabase.table('profiles').select('id', count='exact').execute()
@@ -56,11 +56,21 @@ async def get_overview_stats(_admin=Depends(require_admin)):
         active_user_ids = set(row['user_id'] for row in (active_res.data or []))
         active_7d = len(active_user_ids)
         
+        # Total transactions (all-time)
+        total_txn_res = supabase.table('kaban_transactions').select('id', count='exact').execute()
+        total_transactions = total_txn_res.count or 0
+        
+        # Transactions (7-day)
+        txn_7d_res = supabase.table('kaban_transactions').select('id', count='exact').gte('created_at', seven_days_ago).execute()
+        transactions_7d = txn_7d_res.count or 0
+        
         return {
             "total_users": total_users,
             "active_7d": active_7d,
             "new_today": new_today,
             "pro_threshold": 500,
+            "total_transactions": total_transactions,
+            "transactions_7d": transactions_7d,
         }
     except Exception as e:
         logger.error(f"Error fetching overview stats: {e}")
