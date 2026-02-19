@@ -64,6 +64,10 @@ async def get_overview_stats(_admin=Depends(require_admin)):
         txn_7d_res = supabase.table('kaban_transactions').select('id', count='exact').gte('created_at', seven_days_ago).execute()
         transactions_7d = txn_7d_res.count or 0
         
+        # Total amount tracked (sum of all transaction amounts)
+        amount_res = supabase.table('kaban_transactions').select('amount').execute()
+        total_amount = sum(abs(row.get('amount', 0)) for row in (amount_res.data or []))
+        
         return {
             "total_users": total_users,
             "active_7d": active_7d,
@@ -71,6 +75,7 @@ async def get_overview_stats(_admin=Depends(require_admin)):
             "pro_threshold": 500,
             "total_transactions": total_transactions,
             "transactions_7d": transactions_7d,
+            "total_amount": total_amount,
         }
     except Exception as e:
         logger.error(f"Error fetching overview stats: {e}")
