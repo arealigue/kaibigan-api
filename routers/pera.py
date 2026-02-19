@@ -1957,13 +1957,21 @@ async def get_time_based_shortcut_order(
             datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=60)
         ).date().isoformat()
         
-        transactions = supabase.table('kaban_transactions') \
-            .select('shortcut_id, created_at') \
-            .eq('user_id', user_id) \
-            .eq('transaction_type', 'expense') \
-            .not_.is_('shortcut_id', 'null') \
-            .gte('transaction_date', sixty_days_ago) \
-            .execute()
+        try:
+            transactions = supabase.table('kaban_transactions') \
+                .select('shortcut_id, created_at') \
+                .eq('user_id', user_id) \
+                .eq('transaction_type', 'expense') \
+                .not_.is_('shortcut_id', 'null') \
+                .gte('transaction_date', sixty_days_ago) \
+                .execute()
+        except Exception:
+            # shortcut_id column may not exist yet — return default order
+            return {
+                "ordered_ids": shortcut_ids,
+                "current_slot": time_slot,
+                "reason": "shortcut_tracking_unavailable"
+            }
         
         if not transactions.data:
             # No transaction data, return default order (by usage)
@@ -1974,6 +1982,7 @@ async def get_time_based_shortcut_order(
             }
         
         # Count usage per shortcut per time slot
+        # Note: shortcut_id column may not exist yet on kaban_transactions
         from collections import defaultdict
         slot_usage = defaultdict(lambda: defaultdict(int))
         
