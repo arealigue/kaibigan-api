@@ -28,6 +28,10 @@ CREATE INDEX IF NOT EXISTS idx_analytics_events_user_event
 -- ============================================
 ALTER TABLE analytics_events ENABLE ROW LEVEL SECURITY;
 
+-- Drop policies first to make script re-runnable (idempotent)
+DROP POLICY IF EXISTS "Users can insert own events" ON analytics_events;
+DROP POLICY IF EXISTS "Users can view own events" ON analytics_events;
+
 -- Policy: Users can only insert their own events
 CREATE POLICY "Users can insert own events" 
   ON analytics_events FOR INSERT 
