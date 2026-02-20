@@ -1659,6 +1659,74 @@ async def get_dashboard(
         
         pay_cycle = cycle_res.data[0]
         
+        # ── Auto-sync sahod_pay_cycles from Profile settings ──
+        # Profile is the source of truth for pay cycle type. If user changed it
+        # (e.g. kinsenas → monthly), the sahod_pay_cycles record must be updated
+        # so date ranges are calculated correctly.
+        profile_cycle_type = profile.get('pay_cycle_type', 'monthly')
+        expected_freq = 'bimonthly' if profile_cycle_type == 'kinsenas' else 'monthly'
+        
+        # Determine what pay_day_1/pay_day_2 should be based on Profile
+        if profile_cycle_type == 'kinsenas':
+            expected_day1 = profile.get('kinsenas_day') or 15
+            expected_day2 = profile.get('katapusan_day') or 30
+        elif profile_cycle_type == 'monthly':
+            expected_day1 = profile.get('monthly_payday') or 30
+            expected_day2 = None
+        else:
+            # weekly/daily — Sobre uses monthly frequency as fallback
+            expected_day1 = profile.get('monthly_payday') or 30
+            expected_day2 = None
+        
+        # Check if pay cycle record needs updating
+        needs_sync = (
+            pay_cycle['frequency'] != expected_freq or
+            pay_cycle['pay_day_1'] != expected_day1 or
+            pay_cycle.get('pay_day_2') != expected_day2
+        )
+        
+        if needs_sync:
+            try:
+                sync_data = {
+                    'frequency': expected_freq,
+                    'pay_day_1': expected_day1,
+                    'updated_at': datetime.datetime.now(datetime.timezone.utc).isoformat()
+                }
+                if expected_day2:
+                    sync_data['pay_day_2'] = expected_day2
+                else:
+                    sync_data['pay_day_2'] = None
+                
+                # Also sync expected_amount from profile base_salary
+                base_salary = profile.get('base_salary') or 0
+                if base_salary > 0:
+                    per_payday = base_salary / 2 if profile_cycle_type == 'kinsenas' else base_salary
+                    sync_data['expected_amount'] = per_payday
+                
+                supabase.table('sahod_pay_cycles') \
+                    .update(sync_data) \
+                    .eq('id', pay_cycle['id']) \
+                    .eq('user_id', user_id) \
+                    .execute()
+                
+                # Delete unconfirmed instances so they get recalculated with new dates
+                supabase.table('sahod_pay_cycle_instances') \
+                    .delete() \
+                    .eq('pay_cycle_id', pay_cycle['id']) \
+                    .eq('user_id', user_id) \
+                    .eq('is_assumed', True) \
+                    .is_('confirmed_at', 'null') \
+                    .execute()
+                
+                # Update local copy for rest of this request
+                pay_cycle['frequency'] = expected_freq
+                pay_cycle['pay_day_1'] = expected_day1
+                pay_cycle['pay_day_2'] = expected_day2
+                if base_salary > 0:
+                    pay_cycle['expected_amount'] = sync_data['expected_amount']
+            except Exception:
+                pass  # Non-critical — use existing pay cycle data
+        
         # Get or create current instance
         current_instance_response = await get_current_instance(profile)
         
