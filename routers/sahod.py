@@ -1746,6 +1746,27 @@ async def get_dashboard(
         requires_reconfirm = instance.get('requires_manual_reconfirm', False)
         is_locked = instance.get('confirmed_at') is not None  # Locked after income confirmation
         
+        # §5.1: If re-confirm is needed, sync expected_amount from current profile salary
+        # This handles the case where user clicks "Adjust Salary" → updates base_salary in Profile → returns to Sobre
+        if requires_reconfirm:
+            current_salary = profile.get('base_salary') or 0
+            cycle_type = profile.get('pay_cycle_type', 'monthly')
+            # Only kinsenas needs division — weekly/daily base_salary is already per-cycle
+            per_payday = current_salary / 2 if cycle_type == 'kinsenas' else current_salary
+            if per_payday > 0 and per_payday != instance['expected_amount']:
+                try:
+                    supabase.table('sahod_pay_cycle_instances') \
+                        .update({
+                            'expected_amount': per_payday,
+                            'updated_at': datetime.datetime.now(datetime.timezone.utc).isoformat()
+                        }) \
+                        .eq('id', instance['id']) \
+                        .eq('user_id', user_id) \
+                        .execute()
+                    instance['expected_amount'] = per_payday
+                except Exception:
+                    pass  # Non-critical — show old amount rather than crash
+        
         return {
             "needs_setup": False,
             "current_instance": {

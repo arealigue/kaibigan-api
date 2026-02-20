@@ -577,9 +577,8 @@ async def delete_kaban_transaction(
                     .eq('id', sahod_instance_id) \
                     .eq('user_id', user_id) \
                     .execute()
-                logger.info(f"Reset Sobre instance {sahod_instance_id} after linked tx {transaction_id} deletion")
-            except Exception as reset_err:
-                logger.warning(f"Failed to reset Sobre instance {sahod_instance_id}: {reset_err}")
+            except Exception:
+                logger.warning("Failed to reset Sobre instance after linked tx deletion")
         
         # Now delete the transaction
         delete_res = supabase.table('kaban_transactions').delete().eq('id', transaction_id).eq('user_id', user_id).execute()
