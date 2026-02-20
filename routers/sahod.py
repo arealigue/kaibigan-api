@@ -1684,6 +1684,7 @@ async def get_dashboard(
             pay_cycle['pay_day_1'] != expected_day1 or
             pay_cycle.get('pay_day_2') != expected_day2
         )
+        saved_allocations = []
         
         if needs_sync:
             try:
@@ -1710,13 +1711,36 @@ async def get_dashboard(
                     .execute()
                 
                 # Delete unconfirmed instances so they get recalculated with new dates
-                supabase.table('sahod_pay_cycle_instances') \
-                    .delete() \
+                # But first, save allocations before cascade-delete removes them
+                old_instances = supabase.table('sahod_pay_cycle_instances') \
+                    .select('id') \
                     .eq('pay_cycle_id', pay_cycle['id']) \
                     .eq('user_id', user_id) \
                     .eq('is_assumed', True) \
                     .is_('confirmed_at', 'null') \
                     .execute()
+                old_instance_ids = [i['id'] for i in (old_instances.data or [])]
+                
+                # Save allocation data before deletion (cascade will remove them)
+                saved_allocations = []
+                for old_id in old_instance_ids:
+                    allocs = supabase.table('sahod_allocations') \
+                        .select('envelope_id, target_percentage, allocated_amount') \
+                        .eq('pay_cycle_instance_id', old_id) \
+                        .eq('user_id', user_id) \
+                        .execute()
+                    if allocs.data:
+                        saved_allocations = allocs.data
+                        break  # Use allocations from the first instance that had them
+                
+                if old_instance_ids:
+                    supabase.table('sahod_pay_cycle_instances') \
+                        .delete() \
+                        .eq('pay_cycle_id', pay_cycle['id']) \
+                        .eq('user_id', user_id) \
+                        .eq('is_assumed', True) \
+                        .is_('confirmed_at', 'null') \
+                        .execute()
                 
                 # Update local copy for rest of this request
                 pay_cycle['frequency'] = expected_freq
@@ -1741,6 +1765,24 @@ async def get_dashboard(
         
         instance = current_instance_response['instance']
         days_remaining = current_instance_response['days_remaining']
+        
+        # If sync deleted old instances, re-create allocations for the new instance
+        # (CASCADE delete already removed the old rows, so we use saved_allocations)
+        if needs_sync and saved_allocations and instance:
+            try:
+                now_ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                for alloc in saved_allocations:
+                    supabase.table('sahod_allocations').insert({
+                        'user_id': user_id,
+                        'pay_cycle_instance_id': instance['id'],
+                        'envelope_id': alloc['envelope_id'],
+                        'target_percentage': alloc.get('target_percentage', 0),
+                        'allocated_amount': alloc.get('allocated_amount', 0),
+                        'created_at': now_ts,
+                        'updated_at': now_ts
+                    }).execute()
+            except Exception:
+                pass  # Non-critical — user can re-allocate manually
         
         # Get all envelopes with their allocations for this instance
         envelopes_res = supabase.table('sahod_envelopes') \
