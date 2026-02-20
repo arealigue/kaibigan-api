@@ -1533,10 +1533,27 @@ async def update_recurring_rule(
     user_id = profile['id']
     
     try:
-        update_data = {k: v for k, v in recurring_update.model_dump().items() if v is not None}
+        raw = recurring_update.model_dump()
+        # Include all non-None fields, but always include sahod_envelope_id if explicitly sent (even as None to unlink)
+        update_data = {}
+        for k, v in raw.items():
+            if k == 'sahod_envelope_id':
+                # Always include — None means "unlink", a UUID means "link"
+                update_data[k] = v
+            elif v is not None:
+                update_data[k] = v
+        
+        # If only sahod_envelope_id=None was sent and nothing else changed, still allow the update
+        if not update_data or (len(update_data) == 1 and 'sahod_envelope_id' in update_data and update_data['sahod_envelope_id'] is None):
+            # Still need at least one meaningful field if only unlinking
+            pass  # allow it through
         
         if not update_data:
             raise HTTPException(status_code=400, detail="No fields to update")
+        
+        # Convert empty string envelope_id to None for proper FK handling
+        if 'sahod_envelope_id' in update_data and not update_data['sahod_envelope_id']:
+            update_data['sahod_envelope_id'] = None
         
         update_data['updated_at'] = datetime.datetime.now().isoformat()
         
@@ -1549,10 +1566,8 @@ async def update_recurring_rule(
         
     except HTTPException:
         raise
-    except HTTPException:
-        raise
-    except Exception:
-        logger.exception("update_recurring_rule failed")
+    except Exception as e:
+        logger.exception("update_recurring_rule failed: %s", str(e))
         raise HTTPException(status_code=500, detail="Failed to update recurring rule")
 
 
